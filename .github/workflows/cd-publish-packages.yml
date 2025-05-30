@@ -10,12 +10,14 @@ jobs:
       - name: Checkout do código
         uses: actions/checkout@v4
 
-      - name: Configurar Java
+      - name: Configurar Java e autenticação
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '21'
           server-id: github
+          server-username: ${{ github.actor }} 
+          server-password: ${{ secrets.GITHUB_TOKEN }}  
           settings-path: ${{ github.workspace }}
 
       - name: Build e Deploy

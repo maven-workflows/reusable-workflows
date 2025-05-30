@@ -53,13 +53,7 @@ jobs:
       - name: SonarCloud Analysis
         if: ${{ inputs.run-sonar-analysis }}
         shell: pwsh
-        run: |
-          $project_key = "${{ github.repository }}" -replace '^.*/', ''
-          mvn sonar:sonar `
-            -Dsonar.projectKey=$project_key `
-            -Dsonar.organization=${{ secrets.SONAR_ORGANIZATION }} `
-            -Dsonar.login=${{ secrets.SONAR_TOKEN }} `
-            -Dsonar.host.url=https://sonarcloud.io
+        run: mvn sonar:sonar -Dsonar.projectKey=$project_key -Dsonar.organization=$organization -Dsonar.login=$token -Dsonar.host.url=https://sonarcloud.io
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4

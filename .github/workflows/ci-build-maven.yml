@@ -1,0 +1,67 @@
+name: 'Maven Build & Sonar Reusable Workflow'
+
+on:
+  workflow_call:
+    inputs:
+      run-tests:
+        description: 'Run Maven tests?'
+        required: false
+        type: boolean
+        default: true
+      run-sonar-analysis:
+        description: 'Execute Sonar analysis?'
+        required: false
+        type: boolean
+        default: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: 21
+          cache: 'maven'
+          
+      - name: Cache Maven Dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.m2/repository
+          key: maven-${{ runner.os }}-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            maven-${{ runner.os }}-
+
+      - name: Maven Build
+        run: mvn -B package -DskipTests
+
+      - name: Maven Test
+        if: ${{ inputs.run-tests }}
+        run: mvn test
+
+      - name: Cache Sonar Scanner
+        if: ${{ inputs.run-sonar-analysis }}
+        uses: actions/cache@v3
+        with:
+          path: ~/.sonar/cache
+          key: sonar-${{ runner.os }}-${{ hashFiles('**/pom.xml') }}
+
+      - name: SonarCloud Analysis
+        if: ${{ inputs.run-sonar-analysis }}
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          mvn sonar:sonar \
+            -Dsonar.projectKey=seu_project_key \
+            -Dsonar.organization=sua_organizacao \
+            -Dsonar.host.url=https://sonarcloud.io
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-jar
+          path: target/*.jar

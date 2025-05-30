@@ -52,7 +52,7 @@ jobs:
 
       - name: SonarCloud Analysis
         if: ${{ inputs.run-sonar-analysis }}
-        shell: pwsh   
+        shell: pwsh
         run: |
           $project_key = "${{ github.repository }}" -replace '^.*/', ''
           mvn sonar:sonar `

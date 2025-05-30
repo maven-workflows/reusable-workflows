@@ -50,10 +50,15 @@ jobs:
           path: ~/.sonar/cache
           key: sonar-${{ runner.os }}-${{ hashFiles('**/pom.xml') }}
 
-      - name: SonarCloud Analysis
-        if: ${{ inputs.run-sonar-analysis }}
-        shell: pwsh
-        run: mvn sonar:sonar -Dsonar.projectKey=$project_key -Dsonar.organization=$organization -Dsonar.login=$token -Dsonar.host.url=https://sonarcloud.io
+      - name: Analyze with SonarCloud
+        run: |
+          project_key="${GITHUB_REPOSITORY##*/}"
+          
+          mvn org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
+            -Dsonar.projectKey=$project_key \
+            -Dsonar.organization=${{ secrets.SONAR_ORGANIZATION }} \
+            -Dsonar.host.url=https://sonarcloud.io \
+            -Dsonar.login=${{ secrets.SONAR_TOKEN }}
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4

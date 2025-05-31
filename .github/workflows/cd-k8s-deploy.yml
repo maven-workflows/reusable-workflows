@@ -1,46 +1,83 @@
 name: Deploy to Azure Container Apps
 
+# Este workflow pode ser chamado por outro workflow (workflow_call)
 on:
   workflow_call:
     secrets:
       AZURE_CREDENTIALS:
-        description: 'Credenciais do Azure em formato JSON para login'
+        description: 'JSON do Service Principal para fazer login no Azure'
         required: true
 
+# Variáveis de ambiente padrão (podem ser sobrescritas pelo workflow chamador, se necessário)
 env:
-  ARTIFACT_NAME: "app-jar"
-  RESOURCE_GROUP: "azure-for-github-actions"
-  ACR_NAME: "ghactions"
-  CONTAINER_APP_NAME: "ghactions-ca"
-  IMAGE_NAME: "demo-api"
-  LOCATION: "eastus2"
+  ARTIFACT_NAME: "app-jar"                     # Nome do artifact que contém o JAR
+  RESOURCE_GROUP: "azure-for-github-actions"   # Resource Group onde residem os recursos
+  ACR_NAME: "ghactions"                        # Nome do Azure Container Registry (sem o .azurecr.io)
+  CONTAINER_APP_NAME: "ghactions-ca"           # Nome do Container App
+  IMAGE_NAME: "demo-api"                       # Nome lógico da imagem (antes da tag)
+  ENV_NAME: "ghactions-env"                    # Nome do Container Apps Environment (se precisar criar)
+  LOCATION: "eastus2"                          # Região onde os recursos residem
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
-      # Checkout do código-fonte
-      - name: Checkout do código
-        uses: actions/checkout@v3
-
-      # Download do artifact JAR gerado em etapas anteriores
-      - name: Baixar artifact JAR
+      # ------------------------------------------------------
+      # 1) Baixar o JAR que foi publicado como artifact no build
+      # ------------------------------------------------------
+      - name: Download JAR Artifact
         uses: actions/download-artifact@v4
         with:
           name: ${{ env.ARTIFACT_NAME }}
           path: ./app-jar
 
-      # Login no Azure usando Service Principal
-      - name: Login no Azure
+      # ------------------------------------------------------
+      # 2) Login no Azure com Service Principal
+      # ------------------------------------------------------
+      - name: Azure Login
         uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      # Criação do Dockerfile dinamicamente
-      - name: Criar Dockerfile
+      # ------------------------------------------------------
+      # 3) Conceder à SP a role AcrPull no ACR (se ainda não existir)
+      #    Isso permite que o Container App puxe imagens do ACR usando a identidade do SP
+      # ------------------------------------------------------
+      - name: Grant SP “AcrPull” on ACR (if needed)
         run: |
-          cat <<EOF > Dockerfile
+          # 1) Extrai o clientId do JSON de credenciais e obtém o objectId do SP
+          CLIENT_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r .clientId)
+          SP_OBJECT_ID=$(az ad sp show --id "$CLIENT_ID" --query id -o tsv)
+
+          # 2) Obtém o resourceId do ACR
+          ACR_RESOURCE_ID=$(az acr show \
+            --name "${{ env.ACR_NAME }}" \
+            --resource-group "${{ env.RESOURCE_GROUP }}" \
+            --query id -o tsv)
+
+          # 3) Verifica se a role AcrPull já está atribuída a esse SP
+          EXISTS=$(az role assignment list \
+            --assignee-object-id "$SP_OBJECT_ID" \
+            --scope "$ACR_RESOURCE_ID" \
+            --query "[?roleDefinitionName=='AcrPull'] | length(@)" -o tsv)
+
+          if [ "$EXISTS" -eq "0" ]; then
+            echo "Atribuindo role AcrPull ao Service Principal no ACR..."
+            az role assignment create \
+              --assignee-object-id "$SP_OBJECT_ID" \
+              --role "AcrPull" \
+              --scope "$ACR_RESOURCE_ID"
+          else
+            echo "Service Principal já possui AcrPull no ACR."
+          fi
+
+      # ------------------------------------------------------
+      # 4) Criar Dockerfile dinamicamente, copiando o JAR para dentro da imagem
+      # ------------------------------------------------------
+      - name: Create Dockerfile
+        run: |
+          cat << 'EOF' > Dockerfile
           FROM openjdk:11-jre-slim
           COPY app-jar/*.jar /app.jar
           WORKDIR /
@@ -48,19 +85,41 @@ jobs:
           ENTRYPOINT ["java", "-jar", "/app.jar"]
           EOF
 
-      # Build e push da imagem Docker para o ACR
-      - name: Build e Push da imagem Docker
+      # ------------------------------------------------------
+      # 5) Build & Push da imagem Docker para o ACR
+      # ------------------------------------------------------
+      - name: Build and Push Docker Image
         run: |
           IMAGE_TAG="${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}"
-          docker build -t $IMAGE_TAG .
-          az acr login --name ${{ env.ACR_NAME }}
-          docker push $IMAGE_TAG
+          echo "Building image $IMAGE_TAG"
+          docker build -f Dockerfile -t "$IMAGE_TAG" .
+          echo "Logging in to ACR ${{ env.ACR_NAME }}"
+          az acr login --name "${{ env.ACR_NAME }}"
+          echo "Pushing image to ACR"
+          docker push "$IMAGE_TAG"
 
-      # Implantação no Azure Container App
-      - name: Implantar no Azure Container App
+      # ------------------------------------------------------
+      # 6) Instalar extensão Container Apps (caso ainda não esteja disponível)
+      # ------------------------------------------------------
+      - name: Install Azure Container Apps Extension
+        run: |
+          az extension show --name containerapp &>/dev/null || \
+          az extension add --name containerapp
+
+      # ------------------------------------------------------
+      # 7) Criar ou Atualizar o Container App com 'az containerapp up'
+      #    Se não existir, cria todos os recursos necessários automaticamente
+      # ------------------------------------------------------
+      - name: Deploy with az containerapp up
         run: |
           IMAGE_TAG="${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}"
-          az containerapp update \
-            --name ${{ env.CONTAINER_APP_NAME }} \
-            --resource-group ${{ env.RESOURCE_GROUP }} \
-            --image $IMAGE_TAG
+          az containerapp up \
+            --name "${{ env.CONTAINER_APP_NAME }}" \
+            --resource-group "${{ env.RESOURCE_GROUP }}" \
+            --environment "${{ env.ENV_NAME }}" \
+            --image "$IMAGE_TAG" \
+            --location "${{ env.LOCATION }}" \
+            --ingress external \
+            --target-port 8080 \
+            --registry-server "${{ env.ACR_NAME }}.azurecr.io"
+

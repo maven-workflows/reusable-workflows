@@ -11,10 +11,9 @@ env:
   ARTIFACT_NAME: "app-jar"                     # Nome do artifact que contém o JAR
   RESOURCE_GROUP: "azure-for-github-actions"   # Resource Group onde residem os recursos
   ACR_NAME: "ghactions"                        # Nome do Azure Container Registry (sem o .azurecr.io)
-  CONTAINER_APP_NAME: "ghactions-ca"           # Nome do Container App
+  CONTAINER_APP_NAME: "ghactions-ca"           # Nome do Container App (será criado/atualizado)
   IMAGE_NAME: "demo-api"                       # Nome lógico da imagem (prefixo antes da tag)
   ENV_NAME: "ghactions-env"                    # Nome do Container Apps Environment
-  UAMI_NAME: "ghactions-uami"                  # Nome da User-Assigned Managed Identity que será criada
   LOCATION: "eastus2"                          # Região onde os recursos residem
 
 jobs:
@@ -22,86 +21,25 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # -------------------------------
-      # 1) Baixar o JAR gerado no build
-      # -------------------------------
+      # ------------------------------------------------------
+      # 1) Baixar o JAR que foi publicado como artifact no build
+      # ------------------------------------------------------
       - name: Download JAR Artifact
         uses: actions/download-artifact@v4
         with:
           name: ${{ env.ARTIFACT_NAME }}
           path: ./app-jar
 
-      # -----------------------------------
-      # 2) Login no Azure (Service Principal)
-      # -----------------------------------
+      # ------------------------------------------------------
+      # 2) Login no Azure com Service Principal
+      # ------------------------------------------------------
       - name: Azure Login
         uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      # ----------------------------------------------------------------
-      # 3) Criar (ou recuperar) a User-Assigned Managed Identity (UAMI)
-      # ----------------------------------------------------------------
-      - name: Create or Get User-Assigned Managed Identity
-        id: create_uami
-        run: |
-          # 1) Tenta criar a UAMI; se já existe, az identity create falhará, então capturamos o ID existente
-          set +e
-          UAMI_ID=$(az identity show \
-            --name ${{ env.UAMI_NAME }} \
-            --resource-group ${{ env.RESOURCE_GROUP }} \
-            --query id -o tsv 2>/dev/null)
-          set -e
-
-          if [ -z "$UAMI_ID" ]; then
-            echo "UAMI '${{ env.UAMI_NAME }}' não existe; criando..."
-            UAMI_ID=$(az identity create \
-              --name ${{ env.UAMI_NAME }} \
-              --resource-group ${{ env.RESOURCE_GROUP }} \
-              --location ${{ env.LOCATION }} \
-              --query id -o tsv)
-          else
-            echo "UAMI '${{ env.UAMI_NAME }}' já existe: $UAMI_ID"
-          fi
-
-          echo "UAMI_ID=$UAMI_ID" >> "$GITHUB_OUTPUT"
-
-      # ----------------------------------------------------
-      # 4) Atribuir role AcrPull à UAMI no ACR (se necessário)
-      # ----------------------------------------------------
-      - name: Grant AcrPull to UAMI on ACR (if needed)
-        run: |
-          UAMI_ID="${{ steps.create_uami.outputs.UAMI_ID }}"
-          # Extrai o principalId (objectId) da UAMI
-          UAMI_PRINCIPAL_ID=$(az identity show \
-            --ids "$UAMI_ID" \
-            --query principalId -o tsv)
-
-          # Descobre o resourceId do ACR
-          ACR_RESOURCE_ID=$(az acr show \
-            --name "${{ env.ACR_NAME }}" \
-            --resource-group "${{ env.RESOURCE_GROUP }}" \
-            --query id -o tsv)
-
-          # Verifica se a UAMI já tem a role AcrPull naquele escopo
-          EXISTS=$(az role assignment list \
-            --assignee-object-id "$UAMI_PRINCIPAL_ID" \
-            --scope "$ACR_RESOURCE_ID" \
-            --query "[?roleDefinitionName=='AcrPull'] | length(@)" -o tsv)
-
-          if [ "$EXISTS" -eq "0" ]; then
-            echo "Atribuindo 'AcrPull' para a UAMI no ACR..."
-            az role assignment create \
-              --assignee-object-id "$UAMI_PRINCIPAL_ID" \
-              --assignee-principal-type ServicePrincipal \
-              --role AcrPull \
-              --scope "$ACR_RESOURCE_ID"
-          else
-            echo "UAMI já possui AcrPull no ACR."
-          fi
-
       # ----------------------------------------
-      # 5) Criar Dockerfile dinamicamente a partir do JAR
+      # 3) Criar Dockerfile dinamicamente a partir do JAR
       # ----------------------------------------
       - name: Create Dockerfile
         run: |
@@ -114,22 +52,39 @@ jobs:
           EOF
 
       # ------------------------------------------------
-      # 6) Build & Push da imagem Docker para o ACR
+      # 4) Build & Push da imagem Docker para o ACR
       # ------------------------------------------------
       - name: Build and Push Docker Image
         run: |
           IMAGE_TAG="${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}"
-          echo "Building image $IMAGE_TAG"
+
+          echo "🔨 Building image $IMAGE_TAG"
           docker build -f Dockerfile -t "$IMAGE_TAG" .
 
-          echo "Logging in to ACR ${{ env.ACR_NAME }}"
+          echo "🔑 Logging in to ACR ${{ env.ACR_NAME }}"
           az acr login --name "${{ env.ACR_NAME }}"
 
-          echo "Pushing image to ACR"
+          echo "📤 Pushing image to ACR"
           docker push "$IMAGE_TAG"
 
+      # ------------------------------------------------------
+      # 5) Recuperar credenciais do ACR (username + password)
+      # ------------------------------------------------------
+      - name: Get ACR Credentials
+        id: acr_creds
+        run: |
+          ACR_USERNAME=$(az acr credential show \
+            --name "${{ env.ACR_NAME }}" \
+            --query "username" -o tsv)
+          ACR_PASSWORD=$(az acr credential show \
+            --name "${{ env.ACR_NAME }}" \
+            --query "passwords[0].value" -o tsv)
+
+          echo "ACR_USERNAME=$ACR_USERNAME" >> "$GITHUB_OUTPUT"
+          echo "ACR_PASSWORD=$ACR_PASSWORD" >> "$GITHUB_OUTPUT"
+
       # ------------------------------------------------------------
-      # 7) Instalar extensão Container Apps do Azure CLI (caso não exista)
+      # 6) Instalar extensão Container Apps do Azure CLI (se necessário)
       # ------------------------------------------------------------
       - name: Install Azure Container Apps Extension
         run: |
@@ -138,14 +93,19 @@ jobs:
           fi
 
       # --------------------------------------------------------------------------------
-      # 8) Criar ou Atualizar o Container App com 'az containerapp up' usando a UAMI criada
-      #    - Se Container App não existir, cria Environment, Log Analytics e o CA
-      #    - Se já existir, atualiza apenas a imagem
+      # 7) Criar ou Atualizar o Container App com 'az containerapp up', usando ACR creds
+      #    - Se o Container App não existir, o comando criará:
+      #       • Log Analytics Workspace
+      #       • Environment do Container Apps
+      #       • O próprio Container App
+      #    - Se já existir, fará update apenas da imagem
       # --------------------------------------------------------------------------------
-      - name: Deploy (az containerapp up com User-Assigned Identity)
+      - name: Deploy (az containerapp up com credenciais do ACR)
         run: |
           IMAGE_TAG="${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}"
-          UAMI_ID="${{ steps.create_uami.outputs.UAMI_ID }}"
+          ACR_LOGIN_SERVER="${{ env.ACR_NAME }}.azurecr.io"
+          ACR_USERNAME="${{ steps.acr_creds.outputs.ACR_USERNAME }}"
+          ACR_PASSWORD="${{ steps.acr_creds.outputs.ACR_PASSWORD }}"
 
           az containerapp up \
             --name "${{ env.CONTAINER_APP_NAME }}" \
@@ -155,5 +115,6 @@ jobs:
             --location "${{ env.LOCATION }}" \
             --ingress external \
             --target-port 8080 \
-            --registry-server "${{ env.ACR_NAME }}.azurecr.io" \
-            --assign-identity "$UAMI_ID"
+            --registry-server "$ACR_LOGIN_SERVER" \
+            --registry-username "$ACR_USERNAME" \
+            --registry-password "$ACR_PASSWORD"

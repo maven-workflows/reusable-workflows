@@ -12,7 +12,8 @@ env:
   ARTIFACT_NAME: "app-jar"                    # Nome do artifact que contém o JAR
   RESOURCE_GROUP: "azure-for-github-actions"  # Resource Group onde estão os recursos
   ACR_NAME: "ghactions"                       # Nome do Azure Container Registry
-  ENV_NAME: "ghactions-env"                   # Nome do Container Apps Environment
+  # Caso não exista nenhum Environment, usaremos este nome para criá-lo:
+  DEFAULT_ENV_NAME: "ghactions-env"
   CA_NAME: "ghactions-ca"                     # Nome do Container App
   IMAGE_NAME: "demo-api"                      # Nome da imagem (prefixo antes da tag)
   LOCATION: "eastus2"                         # Região a ser utilizada
@@ -84,7 +85,7 @@ jobs:
         run: |
           az monitor log-analytics workspace create \
             --resource-group ${{ env.RESOURCE_GROUP }} \
-            --workspace-name ${{ env.ENV_NAME }}-logs \
+            --workspace-name ${{ env.DEFAULT_ENV_NAME }}-logs \
             --location ${{ env.LOCATION }}
 
       # ------------------------------------------------------
@@ -95,53 +96,61 @@ jobs:
         run: |
           LOGWS_CUSTOMER_ID=$(az monitor log-analytics workspace show \
                                --resource-group ${{ env.RESOURCE_GROUP }} \
-                               --workspace-name ${{ env.ENV_NAME }}-logs \
+                               --workspace-name ${{ env.DEFAULT_ENV_NAME }}-logs \
                                --query customerId -o tsv)
           LOGWS_KEY=$(az monitor log-analytics workspace get-shared-keys \
                         --resource-group ${{ env.RESOURCE_GROUP }} \
-                        --workspace-name ${{ env.ENV_NAME }}-logs \
+                        --workspace-name ${{ env.DEFAULT_ENV_NAME }}-logs \
                         --query primarySharedKey -o tsv)
 
           echo "LOGWS_CUSTOMER_ID=$LOGWS_CUSTOMER_ID" >> "$GITHUB_OUTPUT"
           echo "LOGWS_KEY=$LOGWS_KEY" >> "$GITHUB_OUTPUT"
 
       # ------------------------------------------------------
-      # 7) Criar ou Atualizar o Container Apps Environment
+      # 7) Descobrir se já existe algum Container Apps Environment no Resource Group
+      #    Caso exista, vamos aproveitá-lo; se não, criaremos um novo com nome DEFAULT_ENV_NAME
       # ------------------------------------------------------
-      - name: Create or Update Container Apps Environment
+      - name: Find or Create Container Apps Environment
+        id: find_or_create_env
         run: |
-          if ! az containerapp env show \
-               --name ${{ env.ENV_NAME }} \
-               --resource-group ${{ env.RESOURCE_GROUP }} \
-             > /dev/null 2>&1; then
+          # Tenta obter o primeiro environment existente no resource group
+          EXISTING=$(az containerapp env list \
+                       --resource-group ${{ env.RESOURCE_GROUP }} \
+                       --query "[0].name" -o tsv)
 
+          if [ -z "$EXISTING" ] || [ "$EXISTING" == "None" ]; then
+            echo "Nenhum ambiente existente encontrado; criando um novo com nome ${{ env.DEFAULT_ENV_NAME }}..."
             az containerapp env create \
-              --name ${{ env.ENV_NAME }} \
+              --name ${{ env.DEFAULT_ENV_NAME }} \
               --resource-group ${{ env.RESOURCE_GROUP }} \
               --location ${{ env.LOCATION }} \
               --logs-workspace-id "${{ steps.get-logs-info.outputs.LOGWS_CUSTOMER_ID }}" \
               --logs-workspace-key "${{ steps.get-logs-info.outputs.LOGWS_KEY }}"
+
+            # Define o nome que vamos usar no restante do pipeline
+            echo "::set-output name=env_name::${{ env.DEFAULT_ENV_NAME }}"
           else
-            az containerapp env update \
-              --name ${{ env.ENV_NAME }} \
-              --resource-group ${{ env.RESOURCE_GROUP }} \
-              --logs-workspace-id "${{ steps.get-logs-info.outputs.LOGWS_CUSTOMER_ID }}" \
-              --logs-workspace-key "${{ steps.get-logs-info.outputs.LOGWS_KEY }}"
+            echo "Ambiente existente encontrado: $EXISTING. Usando-o para criar/atualizar Container Apps."
+            echo "::set-output name=env_name::$EXISTING"
           fi
 
       # ------------------------------------------------------
-      # 8) Criar ou Atualizar o Container App propriamente dito
+      # 8) Criar ou Atualizar o Container App propriamente dito,
+      #    apontando para o ambiente escolhido (existente ou novo)
       # ------------------------------------------------------
       - name: Create or Update Container App
         run: |
+          FINAL_ENV="${{ steps.find_or_create_env.outputs.env_name }}"
+
           if ! az containerapp show \
                --name ${{ env.CA_NAME }} \
                --resource-group ${{ env.RESOURCE_GROUP }} \
              > /dev/null 2>&1; then
+            echo "Criando Container App '${{ env.CA_NAME }}' no Environment '$FINAL_ENV'..."
             az containerapp create \
               --name ${{ env.CA_NAME }} \
               --resource-group ${{ env.RESOURCE_GROUP }} \
-              --environment ${{ env.ENV_NAME }} \
+              --environment "$FINAL_ENV" \
               --image ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }} \
               --ingress external \
               --target-port 8080 \
@@ -149,9 +158,10 @@ jobs:
               --max-replicas 2 \
               --registry-server ${{ env.ACR_NAME }}.azurecr.io
           else
+            echo "Atualizando Container App '${{ env.CA_NAME }}' para usar a imagem mais recente no Environment '$FINAL_ENV'..."
             az containerapp update \
               --name ${{ env.CA_NAME }} \
               --resource-group ${{ env.RESOURCE_GROUP }} \
-              --environment ${{ env.ENV_NAME }} \
+              --environment "$FINAL_ENV" \
               --image ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}
           fi

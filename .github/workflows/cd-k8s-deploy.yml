@@ -35,12 +35,13 @@ jobs:
       - name: Create Dockerfile
         run: |
           cat << EOF > Dockerfile
-          FROM openjdk:11-jre-slim
+          FROM eclipse-temurin:21-jre
           COPY app-jar/*.jar /app.jar
           WORKDIR /
           EXPOSE 8080
           ENTRYPOINT ["java", "-jar", "/app.jar"]
           EOF
+
 
       - name: Get ACR Credentials (Admin User must be enabled)
         id: acr_creds

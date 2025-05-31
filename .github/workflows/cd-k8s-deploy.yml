@@ -1,9 +1,11 @@
 name: Deploy to Azure Container Apps
 
 on:
-  push:
-    branches:
-      - main
+  workflow_call:
+    secrets:
+      AZURE_CREDENTIALS:
+        description: 'Credenciais do Azure em formato JSON para login'
+        required: true
 
 env:
   ARTIFACT_NAME: "app-jar"

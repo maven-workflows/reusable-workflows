@@ -55,7 +55,7 @@ jobs:
             --name "${{ env.CONTAINER_APP_NAME }}" \
             --resource-group "${{ env.RESOURCE_GROUP }}" \
             --environment "${{ env.ENV_NAME }}" \
-            --image "$IMAGE_TAG" \
+            --image "$IMAGE_NAME" \
             --location "${{ env.LOCATION }}" \
             --ingress external \
             --target-port 8080

@@ -8,40 +8,31 @@ on:
         required: true
 
 env:
-  ARTIFACT_NAME: "app-jar"                     # Nome do artifact que contém o JAR
-  RESOURCE_GROUP: "azure-for-github-actions"   # Resource Group onde residem os recursos
-  ACR_NAME: "ghactions"                        # Nome do Azure Container Registry (sem o .azurecr.io)
-  CONTAINER_APP_NAME: "ghactions-ca"           # Nome do Container App (será criado/atualizado)
-  IMAGE_NAME: "demo-api"                       # Nome lógico da imagem (prefixo antes da tag)
-  ENV_NAME: "ghactions-env"                    # Nome do Container Apps Environment
-  LOCATION: "eastus2"                          # Região onde os recursos residem
+  ARTIFACT_NAME: "app-jar"
+  RESOURCE_GROUP: "azure-for-github-actions"
+  ACR_NAME: "ghactions"
+  CONTAINER_APP_NAME: "ghactions-ca"
+  IMAGE_NAME: "demo-api"
+  ENV_NAME: "ghactions-env"
+  LOCATION: "eastus2"
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
-      # ------------------------------------------------------
-      # 1) Baixar o JAR que foi publicado como artifact no build
-      # ------------------------------------------------------
-      - name: Download JAR Artifact
+      - name: Baixar o JAR
         uses: actions/download-artifact@v4
         with:
           name: ${{ env.ARTIFACT_NAME }}
           path: ./app-jar
 
-      # ------------------------------------------------------
-      # 2) Login no Azure com Service Principal
-      # ------------------------------------------------------
-      - name: Azure Login
+      - name: Login no Azure
         uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      # ----------------------------------------
-      # 3) Criar Dockerfile dinamicamente a partir do JAR
-      # ----------------------------------------
-      - name: Create Dockerfile
+      - name: Criar Dockerfile
         run: |
           cat << 'EOF' > Dockerfile
           FROM openjdk:11-jre-slim
@@ -51,62 +42,15 @@ jobs:
           ENTRYPOINT ["java", "-jar", "/app.jar"]
           EOF
 
-      # ------------------------------------------------
-      # 4) Build & Push da imagem Docker para o ACR
-      # ------------------------------------------------
-      - name: Build and Push Docker Image
+      - name: Build e Push da Imagem Docker
         run: |
           IMAGE_TAG="${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}"
-
-          echo "🔨 Building image $IMAGE_TAG"
           docker build -f Dockerfile -t "$IMAGE_TAG" .
-
-          echo "🔑 Logging in to ACR ${{ env.ACR_NAME }}"
           az acr login --name "${{ env.ACR_NAME }}"
-
-          echo "📤 Pushing image to ACR"
           docker push "$IMAGE_TAG"
 
-      # ------------------------------------------------------
-      # 5) Recuperar credenciais do ACR (username + password)
-      # ------------------------------------------------------
-      - name: Get ACR Credentials
-        id: acr_creds
+      - name: Criar ou Atualizar o Container App
         run: |
-          ACR_USERNAME=$(az acr credential show \
-            --name "${{ env.ACR_NAME }}" \
-            --query "username" -o tsv)
-          ACR_PASSWORD=$(az acr credential show \
-            --name "${{ env.ACR_NAME }}" \
-            --query "passwords[0].value" -o tsv)
-
-          echo "ACR_USERNAME=$ACR_USERNAME" >> "$GITHUB_OUTPUT"
-          echo "ACR_PASSWORD=$ACR_PASSWORD" >> "$GITHUB_OUTPUT"
-
-      # ------------------------------------------------------------
-      # 6) Instalar extensão Container Apps do Azure CLI (se necessário)
-      # ------------------------------------------------------------
-      - name: Install Azure Container Apps Extension
-        run: |
-          if ! az extension show --name containerapp &> /dev/null; then
-            az extension add --name containerapp
-          fi
-
-      # --------------------------------------------------------------------------------
-      # 7) Criar ou Atualizar o Container App com 'az containerapp up', usando ACR creds
-      #    - Se o Container App não existir, o comando criará:
-      #       • Log Analytics Workspace
-      #       • Environment do Container Apps
-      #       • O próprio Container App
-      #    - Se já existir, fará update apenas da imagem
-      # --------------------------------------------------------------------------------
-      - name: Deploy (az containerapp up com credenciais do ACR)
-        run: |
-          IMAGE_TAG="${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}"
-          ACR_LOGIN_SERVER="${{ env.ACR_NAME }}.azurecr.io"
-          ACR_USERNAME="${{ steps.acr_creds.outputs.ACR_USERNAME }}"
-          ACR_PASSWORD="${{ steps.acr_creds.outputs.ACR_PASSWORD }}"
-
           az containerapp up \
             --name "${{ env.CONTAINER_APP_NAME }}" \
             --resource-group "${{ env.RESOURCE_GROUP }}" \
@@ -114,7 +58,4 @@ jobs:
             --image "$IMAGE_TAG" \
             --location "${{ env.LOCATION }}" \
             --ingress external \
-            --target-port 8080 \
-            --registry-server "$ACR_LOGIN_SERVER" \
-            --registry-username "$ACR_USERNAME" \
-            --registry-password "$ACR_PASSWORD"
+            --target-port 8080

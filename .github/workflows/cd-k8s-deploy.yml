@@ -1,11 +1,7 @@
-name: Deploy to Azure Container Apps
+name: Deploy to Azure Container Apps - Quick & Functional
 
 on:
-  workflow_call:
-    secrets:
-      AZURE_CREDENTIALS:
-        description: 'JSON do Service Principal para fazer login no Azure'
-        required: true
+  workflow_dispatch:
 
 env:
   ARTIFACT_NAME: "app-jar"
@@ -21,6 +17,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
       - name: Download JAR Artifact
         uses: actions/download-artifact@v4
         with:
@@ -34,7 +33,7 @@ jobs:
 
       - name: Create Dockerfile
         run: |
-          cat << 'EOF' > Dockerfile
+          cat << EOF > Dockerfile
           FROM openjdk:11-jre-slim
           COPY app-jar/*.jar /app.jar
           WORKDIR /
@@ -42,43 +41,33 @@ jobs:
           ENTRYPOINT ["java", "-jar", "/app.jar"]
           EOF
 
-      - name: Build and Push Docker Image
-        run: |
-          IMAGE_TAG="${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}"
-          echo "🔨 Building image $IMAGE_TAG"
-          docker build -f Dockerfile -t "$IMAGE_TAG" .
-
-          echo "🔑 Logging in to ACR ${{ env.ACR_NAME }}"
-          az acr login --name "${{ env.ACR_NAME }}"
-
-          echo "📤 Pushing image to ACR"
-          docker push "$IMAGE_TAG"
-
-      - name: Enable ACR admin user
-        run: az acr update -n ${{ env.ACR_NAME }} --admin-enabled true
-
-      - name: Get ACR Credentials
+      - name: Get ACR Credentials (requires admin user enabled)
         id: acr_creds
         run: |
           ACR_USERNAME=$(az acr credential show --name "${{ env.ACR_NAME }}" --query "username" -o tsv)
           ACR_PASSWORD=$(az acr credential show --name "${{ env.ACR_NAME }}" --query "passwords[0].value" -o tsv)
-
           echo "ACR_USERNAME=$ACR_USERNAME" >> $GITHUB_OUTPUT
           echo "ACR_PASSWORD=$ACR_PASSWORD" >> $GITHUB_OUTPUT
 
-      - name: Install Azure Container Apps Extension
+      - name: Login no ACR via Docker
+        run: |
+          echo "${{ steps.acr_creds.outputs.ACR_PASSWORD }}" | docker login ${{ env.ACR_NAME }}.azurecr.io -u ${{ steps.acr_creds.outputs.ACR_USERNAME }} --password-stdin
+
+      - name: Build and Push Docker Image
+        run: |
+          IMAGE_TAG="${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}"
+          docker build -t "$IMAGE_TAG" .
+          docker push "$IMAGE_TAG"
+
+      - name: Install Azure Container Apps CLI extension
         run: |
           if ! az extension show --name containerapp &> /dev/null; then
             az extension add --name containerapp
           fi
 
-      - name: Deploy to Azure Container Apps
+      - name: Deploy Container App
         run: |
           IMAGE_TAG="${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}"
-          ACR_LOGIN_SERVER="${{ env.ACR_NAME }}.azurecr.io"
-          ACR_USERNAME="${{ steps.acr_creds.outputs.ACR_USERNAME }}"
-          ACR_PASSWORD="${{ steps.acr_creds.outputs.ACR_PASSWORD }}"
-
           az containerapp up \
             --name "${{ env.CONTAINER_APP_NAME }}" \
             --resource-group "${{ env.RESOURCE_GROUP }}" \
@@ -87,6 +76,6 @@ jobs:
             --location "${{ env.LOCATION }}" \
             --ingress external \
             --target-port 8080 \
-            --registry-server "$ACR_LOGIN_SERVER" \
-            --registry-username "$ACR_USERNAME" \
-            --registry-password "$ACR_PASSWORD"
+            --registry-server "${{ env.ACR_NAME }}.azurecr.io" \
+            --registry-username "${{ steps.acr_creds.outputs.ACR_USERNAME }}" \
+            --registry-password "${{ steps.acr_creds.outputs.ACR_PASSWORD }}"

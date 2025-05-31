@@ -8,14 +8,13 @@ on:
         description: 'JSON do Service Principal para fazer login no Azure'
         required: true
 
-# Variáveis de ambiente padrão (podem ser sobrescritas pelo workflow chamador, se necessário)
 env:
   ARTIFACT_NAME: "app-jar"                     # Nome do artifact que contém o JAR
   RESOURCE_GROUP: "azure-for-github-actions"   # Resource Group onde residem os recursos
   ACR_NAME: "ghactions"                        # Nome do Azure Container Registry (sem o .azurecr.io)
-  CONTAINER_APP_NAME: "ghactions-ca"           # Nome do Container App
-  IMAGE_NAME: "demo-api"                       # Nome lógico da imagem (antes da tag)
-  ENV_NAME: "ghactions-env"                    # Nome do Container Apps Environment (se precisar criar)
+  CONTAINER_APP_NAME: "ghactions-ca"           # Nome do Container App (será criado/atualizado)
+  IMAGE_NAME: "demo-api"                       # Nome lógico da imagem (prefixo antes da tag)
+  ENV_NAME: "ghactions-env"                    # Nome do Container Apps Environment (será criado/atualizado)
   LOCATION: "eastus2"                          # Região onde os recursos residem
 
 jobs:
@@ -41,39 +40,7 @@ jobs:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
       # ------------------------------------------------------
-      # 3) Conceder à SP a role AcrPull no ACR (se ainda não existir)
-      #    Isso permite que o Container App puxe imagens do ACR usando a identidade do SP
-      # ------------------------------------------------------
-      - name: Grant SP “AcrPull” on ACR (if needed)
-        run: |
-          # 1) Extrai o clientId do JSON de credenciais e obtém o objectId do SP
-          CLIENT_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r .clientId)
-          SP_OBJECT_ID=$(az ad sp show --id "$CLIENT_ID" --query id -o tsv)
-
-          # 2) Obtém o resourceId do ACR
-          ACR_RESOURCE_ID=$(az acr show \
-            --name "${{ env.ACR_NAME }}" \
-            --resource-group "${{ env.RESOURCE_GROUP }}" \
-            --query id -o tsv)
-
-          # 3) Verifica se a role AcrPull já está atribuída a esse SP
-          EXISTS=$(az role assignment list \
-            --assignee-object-id "$SP_OBJECT_ID" \
-            --scope "$ACR_RESOURCE_ID" \
-            --query "[?roleDefinitionName=='AcrPull'] | length(@)" -o tsv)
-
-          if [ "$EXISTS" -eq "0" ]; then
-            echo "Atribuindo role AcrPull ao Service Principal no ACR..."
-            az role assignment create \
-              --assignee-object-id "$SP_OBJECT_ID" \
-              --role "AcrPull" \
-              --scope "$ACR_RESOURCE_ID"
-          else
-            echo "Service Principal já possui AcrPull no ACR."
-          fi
-
-      # ------------------------------------------------------
-      # 4) Criar Dockerfile dinamicamente, copiando o JAR para dentro da imagem
+      # 3) Criar Dockerfile dinamicamente, copiando o JAR para dentro da imagem
       # ------------------------------------------------------
       - name: Create Dockerfile
         run: |
@@ -86,33 +53,42 @@ jobs:
           EOF
 
       # ------------------------------------------------------
-      # 5) Build & Push da imagem Docker para o ACR
+      # 4) Build & Push da imagem Docker para o ACR
       # ------------------------------------------------------
       - name: Build and Push Docker Image
         run: |
+          # Define a tag baseada no SHA do commit
           IMAGE_TAG="${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}"
           echo "Building image $IMAGE_TAG"
           docker build -f Dockerfile -t "$IMAGE_TAG" .
+
+          # Autentica no ACR e faz push
           echo "Logging in to ACR ${{ env.ACR_NAME }}"
           az acr login --name "${{ env.ACR_NAME }}"
           echo "Pushing image to ACR"
           docker push "$IMAGE_TAG"
 
       # ------------------------------------------------------
-      # 6) Instalar extensão Container Apps (caso ainda não esteja disponível)
+      # 5) Garantir que a extensão Container Apps do Azure CLI esteja instalada
       # ------------------------------------------------------
       - name: Install Azure Container Apps Extension
         run: |
-          az extension show --name containerapp &>/dev/null || \
-          az extension add --name containerapp
+          if ! az extension show --name containerapp &> /dev/null; then
+            az extension add --name containerapp
+          fi
 
       # ------------------------------------------------------
-      # 7) Criar ou Atualizar o Container App com 'az containerapp up'
-      #    Se não existir, cria todos os recursos necessários automaticamente
+      # 6) Criar ou Atualizar o Container App com 'az containerapp up'
+      #    - Se não existir, criará:  
+      #       • Log Analytics Workspace  
+      #       • Environment do Container Apps  
+      #       • O próprio Container App  
+      #    - Se já existir, fará update da imagem  
       # ------------------------------------------------------
-      - name: Deploy with az containerapp up
+      - name: Deploy (az containerapp up)
         run: |
           IMAGE_TAG="${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}"
+
           az containerapp up \
             --name "${{ env.CONTAINER_APP_NAME }}" \
             --resource-group "${{ env.RESOURCE_GROUP }}" \

@@ -1,7 +1,11 @@
-name: Deploy to Azure Container Apps - Quick & Functional
+name: Deploy to Azure Container Apps
 
 on:
-  workflow_dispatch:
+  workflow_call:
+    secrets:
+      AZURE_CREDENTIALS:
+        description: 'JSON do Service Principal para login no Azure'
+        required: true
 
 env:
   ARTIFACT_NAME: "app-jar"
@@ -17,9 +21,6 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
       - name: Download JAR Artifact
         uses: actions/download-artifact@v4
         with:
@@ -41,7 +42,7 @@ jobs:
           ENTRYPOINT ["java", "-jar", "/app.jar"]
           EOF
 
-      - name: Get ACR Credentials (requires admin user enabled)
+      - name: Get ACR Credentials (Admin User must be enabled)
         id: acr_creds
         run: |
           ACR_USERNAME=$(az acr credential show --name "${{ env.ACR_NAME }}" --query "username" -o tsv)
@@ -49,7 +50,7 @@ jobs:
           echo "ACR_USERNAME=$ACR_USERNAME" >> $GITHUB_OUTPUT
           echo "ACR_PASSWORD=$ACR_PASSWORD" >> $GITHUB_OUTPUT
 
-      - name: Login no ACR via Docker
+      - name: Login on ACR Docker Registry
         run: |
           echo "${{ steps.acr_creds.outputs.ACR_PASSWORD }}" | docker login ${{ env.ACR_NAME }}.azurecr.io -u ${{ steps.acr_creds.outputs.ACR_USERNAME }} --password-stdin
 
@@ -59,7 +60,7 @@ jobs:
           docker build -t "$IMAGE_TAG" .
           docker push "$IMAGE_TAG"
 
-      - name: Install Azure Container Apps CLI extension
+      - name: Install Azure Container Apps Extension
         run: |
           if ! az extension show --name containerapp &> /dev/null; then
             az extension add --name containerapp

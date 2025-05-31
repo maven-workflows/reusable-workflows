@@ -15,7 +15,6 @@ env:
   IMAGE_NAME: "demo-api"
   ENV_NAME: "ghactions-env"
   LOCATION: "eastus2"
-  DEBUG: "true"
 
 jobs:
   build-and-deploy:
@@ -28,6 +27,13 @@ jobs:
           name: ${{ env.ARTIFACT_NAME }}
           path: ./app-jar
 
+      - name: List downloaded artifact contents
+        run: |
+          echo "Conteúdo do diretório app-jar:"
+          ls -la ./app-jar
+          echo "Tamanho dos arquivos:"
+          du -h ./app-jar/*
+
       - name: Azure Login
         uses: azure/login@v1
         with:
@@ -35,24 +41,13 @@ jobs:
 
       - name: Create Dockerfile
         run: |
-          if [ "${{ env.DEBUG }}" = "true" ]; then
-            cat << EOF > Dockerfile
-            FROM eclipse-temurin:21-jre
-            COPY app-jar/*.jar /app.jar
-            WORKDIR /
-            EXPOSE 8080
-            CMD ["sleep", "3600"]
-            EOF
-          else
-            cat << EOF > Dockerfile
-            FROM eclipse-temurin:21-jre
-            COPY app-jar/*.jar /app.jar
-            WORKDIR /
-            EXPOSE 8080
-            ENTRYPOINT ["java", "-jar", "/app.jar"]
-            EOF
-          fi
-
+          cat << EOF > Dockerfile
+          FROM eclipse-temurin:21-jre
+          COPY app-jar/*.jar /app.jar
+          WORKDIR /
+          EXPOSE 8080
+          ENTRYPOINT ["java", "-jar", "/app.jar"]
+          EOF
 
 
       - name: Get ACR Credentials (Admin User must be enabled)

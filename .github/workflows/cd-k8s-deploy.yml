@@ -7,80 +7,99 @@ on:
         description: 'JSON do Service Principal para fazer login no Azure'
         required: true
 
-# Variáveis de ambiente padrão (podem ser sobrescritas pelo workflow chamador)
 env:
-  ARTIFACT_NAME: "app-jar"                    # Nome do artifact que contém o JAR
-  RESOURCE_GROUP: "azure-for-github-actions"  # Resource Group onde estão os recursos
-  ACR_NAME: "ghactions"                       # Nome do Azure Container Registry
-  # Caso não exista nenhum Environment, usaremos este nome para criá-lo:
-  DEFAULT_ENV_NAME: "ghactions-env"
-  CA_NAME: "ghactions-ca"                     # Nome do Container App
-  IMAGE_NAME: "demo-api"                      # Nome da imagem (prefixo antes da tag)
-  LOCATION: "eastus2"                         # Região a ser utilizada
+  ARTIFACT_NAME: "app-jar"                    # nome do artifact que contém o JAR
+  RESOURCE_GROUP: "azure-for-github-actions"  # RG onde estão os recursos
+  ACR_NAME: "ghactions"                       # nome do seu Azure Container Registry (sem .azurecr.io)
+  DEFAULT_ENV_NAME: "ghactions-env"           # nome do Environment padrão (se criar)
+  CA_NAME: "ghactions-ca"                     # nome do Container App
+  IMAGE_NAME: "demo-api"                      # nome lógico da imagem (antes da tag)
+  LOCATION: "eastus2"                         # região
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
     steps:
-      # ------------------------------------------------------
-      # 1) Download do JAR que foi publicado como artifact no build
-      # ------------------------------------------------------
+      # 1) Download do JAR publicado como artifact no job de build
       - name: Download JAR Artifact
         uses: actions/download-artifact@v4
         with:
           name: ${{ env.ARTIFACT_NAME }}
           path: ./app-jar
 
-      # ------------------------------------------------------
-      # 2) Login no Azure (Service Principal)
-      # ------------------------------------------------------
+      # 2) Login no Azure com Service Principal
       - name: Azure Login
         uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      # ------------------------------------------------------
-      # 3) Criar Dockerfile dinamicamente, copiando o JAR de app-jar/
-      # ------------------------------------------------------
+      # 3) (Opcional) Verifica via Azure CLI se o SP já tem role AcrPull sobre o ACR.
+      #    Se não tiver, cria a atribuição. Tudo via CLI, sem portal.
+      - name: Grant SP “AcrPull” on ACR (se ainda não existir)
+        run: |
+          # O azure/login já configura as variáveis: AZURE_CLIENT_ID e AZURE_SUBSCRIPTION_ID
+          # 1) Descobre o Object ID do Service Principal que está logado
+          SP_OBJECT_ID=$(
+            az ad sp show --id $AZURE_CLIENT_ID --query objectId -o tsv
+          )
+
+          # 2) Descobre o resource ID do ACR
+          ACR_RESOURCE_ID=$(
+            az acr show \
+              --name "${{ env.ACR_NAME }}" \
+              --resource-group "${{ env.RESOURCE_GROUP }}" \
+              --query id -o tsv
+          )
+
+          # 3) Verifica se já existe role assignment “AcrPull” para este SP sobre esse ACR
+          EXISTS=$(
+            az role assignment list \
+              --assignee-object-id "$SP_OBJECT_ID" \
+              --scope "$ACR_RESOURCE_ID" \
+              --query "[?roleDefinitionName=='AcrPull'] | length(@)" -o tsv
+          )
+
+          if [ "$EXISTS" -eq "0" ]; then
+            echo "SP não possui AcrPull sobre o ACR. Criando role assignment..."
+            az role assignment create \
+              --assignee-object-id "$SP_OBJECT_ID" \
+              --role "AcrPull" \
+              --scope "$ACR_RESOURCE_ID"
+          else
+            echo "SP já tem AcrPull sobre o ACR. Pulando esta etapa."
+          fi
+
+      # 4) Criar Dockerfile dinamicamente (você já fazia isso)
       - name: Criar Dockerfile
         run: |
           cat << 'EOF' > Dockerfile
           FROM openjdk:11-jre-slim
-
-          # Copia o único JAR que esteja dentro de app-jar/ para /app.jar
           COPY app-jar/*.jar /app.jar
-
           WORKDIR /
-
           EXPOSE 8080
-
           ENTRYPOINT ["java", "-jar", "/app.jar"]
           EOF
 
-      # ------------------------------------------------------
-      # 4) Build & Push da imagem Docker para o Azure Container Registry
-      # ------------------------------------------------------
+      # 5) Build & Push da imagem Docker para o ACR
       - name: Build & Push Docker Image
         run: |
           echo "Verificando conteúdo de ./app-jar:"
           ls -l ./app-jar
-          echo "Verificando conteúdo da raiz (deve ter Dockerfile):"
+          echo "Verificando conteúdo da raiz (Dockerfile):"
           ls -l .
 
-          # Constrói a imagem usando o Dockerfile gerado
+          # Construir a imagem com tag = <ACR_NAME>.azurecr.io/<IMAGE_NAME>:<GITHUB_SHA>
           docker build \
             -f Dockerfile \
             -t ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }} \
             .
 
-          # Login no ACR e push da imagem
+          # Login no ACR (usa o Service Principal, pois o SP já tem AcrPull/AcrPush)
           az acr login --name ${{ env.ACR_NAME }}
           docker push ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}
 
-      # ------------------------------------------------------
-      # 5) Criar Log Analytics Workspace (se ainda não existir)
-      # ------------------------------------------------------
+      # 6) Criar Log Analytics Workspace (se não existir)
       - name: Create Log Analytics Workspace (if not exists)
         run: |
           az monitor log-analytics workspace create \
@@ -88,38 +107,39 @@ jobs:
             --workspace-name ${{ env.DEFAULT_ENV_NAME }}-logs \
             --location ${{ env.LOCATION }}
 
-      # ------------------------------------------------------
-      # 6) Obter Customer ID (GUID) e Shared Key do Log Analytics Workspace
-      # ------------------------------------------------------
+      # 7) Obter Customer ID e Shared Key do Log Analytics (para anexar ao Environment)
       - name: Get Log Analytics Workspace Customer ID and Key
         id: get-logs-info
         run: |
-          LOGWS_CUSTOMER_ID=$(az monitor log-analytics workspace show \
-                               --resource-group ${{ env.RESOURCE_GROUP }} \
-                               --workspace-name ${{ env.DEFAULT_ENV_NAME }}-logs \
-                               --query customerId -o tsv)
-          LOGWS_KEY=$(az monitor log-analytics workspace get-shared-keys \
-                        --resource-group ${{ env.RESOURCE_GROUP }} \
-                        --workspace-name ${{ env.DEFAULT_ENV_NAME }}-logs \
-                        --query primarySharedKey -o tsv)
+          LOGWS_CUSTOMER_ID=$(
+            az monitor log-analytics workspace show \
+              --resource-group ${{ env.RESOURCE_GROUP }} \
+              --workspace-name ${{ env.DEFAULT_ENV_NAME }}-logs \
+              --query customerId -o tsv
+          )
+          LOGWS_KEY=$(
+            az monitor log-analytics workspace get-shared-keys \
+              --resource-group ${{ env.RESOURCE_GROUP }} \
+              --workspace-name ${{ env.DEFAULT_ENV_NAME }}-logs \
+              --query primarySharedKey -o tsv
+          )
 
           echo "LOGWS_CUSTOMER_ID=$LOGWS_CUSTOMER_ID" >> "$GITHUB_OUTPUT"
           echo "LOGWS_KEY=$LOGWS_KEY" >> "$GITHUB_OUTPUT"
 
-      # ------------------------------------------------------
-      # 7) Descobrir se já existe algum Container Apps Environment no Resource Group
-      #    Caso exista, vamos aproveitá-lo; se não, criaremos um novo com nome DEFAULT_ENV_NAME
-      # ------------------------------------------------------
+      # 8) Descobrir se já existe algum Container Apps Environment no RG,
+      #    ou criar um novo se não existir
       - name: Find or Create Container Apps Environment
         id: find_or_create_env
         run: |
-          # Tenta obter o primeiro environment existente no resource group
-          EXISTING=$(az containerapp env list \
-                       --resource-group ${{ env.RESOURCE_GROUP }} \
-                       --query "[0].name" -o tsv)
+          EXISTING=$(
+            az containerapp env list \
+              --resource-group ${{ env.RESOURCE_GROUP }} \
+              --query "[0].name" -o tsv
+          )
 
           if [ -z "$EXISTING" ] || [ "$EXISTING" == "None" ]; then
-            echo "Nenhum ambiente existente encontrado; criando um novo com nome ${{ env.DEFAULT_ENV_NAME }}..."
+            echo "Nenhum Environment encontrado; criando ${{ env.DEFAULT_ENV_NAME }}..."
             az containerapp env create \
               --name ${{ env.DEFAULT_ENV_NAME }} \
               --resource-group ${{ env.RESOURCE_GROUP }} \
@@ -127,41 +147,41 @@ jobs:
               --logs-workspace-id "${{ steps.get-logs-info.outputs.LOGWS_CUSTOMER_ID }}" \
               --logs-workspace-key "${{ steps.get-logs-info.outputs.LOGWS_KEY }}"
 
-            # Define o nome que vamos usar no restante do pipeline
             echo "::set-output name=env_name::${{ env.DEFAULT_ENV_NAME }}"
           else
-            echo "Ambiente existente encontrado: $EXISTING. Usando-o para criar/atualizar Container Apps."
+            echo "Usando Environment existente: $EXISTING"
             echo "::set-output name=env_name::$EXISTING"
           fi
 
-      # ------------------------------------------------------
-      # 8) Criar ou Atualizar o Container App propriamente dito,
-      #    apontando para o ambiente escolhido (existente ou novo)
-      # ------------------------------------------------------
+      # 9) Criar ou Atualizar o Container App, passando somente --registry-server.
+      #    O CLI já usará o Service Principal (que tem AcrPull) para puxar a imagem.
       - name: Create or Update Container App
         run: |
           FINAL_ENV="${{ steps.find_or_create_env.outputs.env_name }}"
+          ACR_LOGIN_SERVER="${{ env.ACR_NAME }}.azurecr.io"
+          IMAGE_FULL="$ACR_LOGIN_SERVER/${{ env.IMAGE_NAME }}:${{ github.sha }}"
 
           if ! az containerapp show \
-               --name ${{ env.CA_NAME }} \
-               --resource-group ${{ env.RESOURCE_GROUP }} \
-             > /dev/null 2>&1; then
+                --name ${{ env.CA_NAME }} \
+                --resource-group ${{ env.RESOURCE_GROUP }} \
+              > /dev/null 2>&1; then
             echo "Criando Container App '${{ env.CA_NAME }}' no Environment '$FINAL_ENV'..."
             az containerapp create \
               --name ${{ env.CA_NAME }} \
               --resource-group ${{ env.RESOURCE_GROUP }} \
               --environment "$FINAL_ENV" \
-              --image ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }} \
+              --image "$IMAGE_FULL" \
               --ingress external \
               --target-port 8080 \
               --min-replicas 0 \
               --max-replicas 2 \
-              --registry-server ${{ env.ACR_NAME }}.azurecr.io
+              --registry-server "$ACR_LOGIN_SERVER"
           else
-            echo "Atualizando Container App '${{ env.CA_NAME }}' para usar a imagem mais recente no Environment '$FINAL_ENV'..."
+            echo "Atualizando Container App '${{ env.CA_NAME }}' para usar a imagem mais recente..."
             az containerapp update \
               --name ${{ env.CA_NAME }} \
               --resource-group ${{ env.RESOURCE_GROUP }} \
               --environment "$FINAL_ENV" \
-              --image ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}
+              --image "$IMAGE_FULL" \
+              --registry-server "$ACR_LOGIN_SERVER"
           fi

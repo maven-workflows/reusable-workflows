@@ -69,22 +69,20 @@ jobs:
       # ------------------------------------------------------
       - name: Build & Push Docker Image
         run: |
-          # Verifica que o JAR e o Dockerfile estão onde esperamos:
-          echo "Conteúdo de ./app-jar:"
-          ls -l ./app-jar
-          echo "Conteúdo da raiz (deve ter Dockerfile):"
-          ls -l .
-
-          # Constrói a imagem usando o Dockerfile que acabamos de gerar:
+          # Captura o nome exato do JAR que foi baixado:
+          JAR_NAME=$(ls ./app-jar/*.jar | head -n1)
+            
+          echo "Usando JAR: ${JAR_NAME}"
+            
           docker build \
             -f Dockerfile \
+            --build-arg JAR_FILE=${JAR_NAME} \
             -t ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }} \
-            --build-arg JAR_FILE=./app-jar/*.jar \
             .
-
-          # Faz login no ACR e envia a imagem
+            
           az acr login --name ${{ env.ACR_NAME }}
           docker push ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}
+
 
       # ------------------------------------------------------
       # 5) Cria (se ainda não existir) o Log Analytics Workspace

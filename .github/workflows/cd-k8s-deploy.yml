@@ -8,7 +8,7 @@ on:
         required: true
 
 env:
-  ARTIFACT_NAME: "app-jar"        # nome do artifact que contém o JAR
+  ARTIFACT_NAME: "app-jar"
   RESOURCE_GROUP: "azure-for-github-actions"
   ACR_NAME: "ghactions"
   ENV_NAME: "ghactions-env"
@@ -21,92 +21,98 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # ------------------------------------------------------
-      # 1) Download do JAR que foi publicado como artifact no build
-      # ------------------------------------------------------
+      # (passos anteriores: download do JAR, login no Azure, gerar Dockerfile, build & push etc.)
+      # … (1) Download JAR
       - name: Download JAR Artifact
         uses: actions/download-artifact@v4
         with:
           name: ${{ env.ARTIFACT_NAME }}
           path: ./app-jar
 
-      # ------------------------------------------------------
-      # 2) Login no Azure (Service Principal)
-      # ------------------------------------------------------
+      # … (2) Azure Login
       - name: Azure Login
         uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      # ------------------------------------------------------
-      # 3) Cria o Dockerfile “na mão” antes de rodar o build
-      # ------------------------------------------------------
+      # … (3) Criar Dockerfile + Build & Push (conforme já configurado)
       - name: Criar Dockerfile
         run: |
           cat << 'EOF' > Dockerfile
           FROM openjdk:11-jre-slim
-
-          # Copia qualquer JAR que esteja dentro de app-jar/ direto para /app.jar
           COPY app-jar/*.jar /app.jar
-
           WORKDIR /
-
           EXPOSE 8080
-
           ENTRYPOINT ["java", "-jar", "/app.jar"]
           EOF
 
-
-      # ------------------------------------------------------
-      # 4) Build & Push da imagem Docker (usa o JAR baixado em ./app-jar)
-      # ------------------------------------------------------
       - name: Build & Push Docker Image
         run: |
-          echo "Conteúdo de ./app-jar:"
-          ls -l ./app-jar
-          echo "Conteúdo da raiz (deve ter Dockerfile):"
-          ls -l .
-            
-          # Não precisamos mais de --build-arg, pois o Dockerfile já faz glob em app-jar/*.jar
-          docker build \
-            -f Dockerfile \
+          docker build -f Dockerfile \
             -t ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }} \
             .
-            
           az acr login --name ${{ env.ACR_NAME }}
           docker push ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}
 
-
-
-      # ------------------------------------------------------
-      # 5) Cria (se ainda não existir) o Log Analytics Workspace
-      # ------------------------------------------------------
+      # --------------------------  
+      # 4) PASSO CORRIGIDO: Criar Log Analytics Workspace (se não existir)
+      # --------------------------
       - name: Create Log Analytics Workspace (if not exists)
         run: |
+          # Tenta criar o workspace “ghactions-env-logs”; se já existir, não dá erro
           az monitor log-analytics workspace create \
             --resource-group ${{ env.RESOURCE_GROUP }} \
             --workspace-name ${{ env.ENV_NAME }}-logs \
             --location ${{ env.LOCATION }}
 
-      # ------------------------------------------------------
-      # 6) Cria (se ainda não existir) o Container Apps Environment
-      # ------------------------------------------------------
-      - name: Create Container Apps Environment (if not exists)
+      # --------------------------  
+      # 5) Obter ID e Key do workspace criado
+      # --------------------------
+      - name: Get Log Analytics Workspace ID and Key
+        id: get-logs-info
         run: |
+          LOGWS_ID=$(az monitor log-analytics workspace show \
+                       --resource-group ${{ env.RESOURCE_GROUP }} \
+                       --workspace-name ${{ env.ENV_NAME }}-logs \
+                       --query id -o tsv)
+          LOGWS_KEY=$(az monitor log-analytics workspace get-shared-keys \
+                        --resource-group ${{ env.RESOURCE_GROUP }} \
+                        --workspace-name ${{ env.ENV_NAME }}-logs \
+                        --query primarySharedKey -o tsv)
+
+          echo "LOGWS_ID=$LOGWS_ID" >> "$GITHUB_OUTPUT"
+          echo "LOGWS_KEY=$LOGWS_KEY" >> "$GITHUB_OUTPUT"
+
+      # --------------------------  
+      # 6) Criar (ou atualizar) o Container Apps Environment usando ID e KEY
+      # --------------------------
+      - name: Create or Update Container Apps Environment
+        run: |
+          # Verifica se o ambiente já existe:
           if ! az containerapp env show \
                --name ${{ env.ENV_NAME }} \
                --resource-group ${{ env.RESOURCE_GROUP }} \
              > /dev/null 2>&1; then
+
+            # Se não existir, cria com o workspace existente:
             az containerapp env create \
               --name ${{ env.ENV_NAME }} \
               --resource-group ${{ env.RESOURCE_GROUP }} \
               --location ${{ env.LOCATION }} \
-              --logs-workspace-name ${{ env.ENV_NAME }}-logs
+              --logs-workspace-id "${{ steps.get-logs-info.outputs.LOGWS_ID }}" \
+              --logs-workspace-key "${{ steps.get-logs-info.outputs.LOGWS_KEY }}"
+          else
+            # Se já existe, apenas atualiza as configurações de log para usar esse workspace:
+            az containerapp env update \
+              --name ${{ env.ENV_NAME }} \
+              --resource-group ${{ env.RESOURCE_GROUP }} \
+              --logs-workspace-id "${{ steps.get-logs-info.outputs.LOGWS_ID }}" \
+              --logs-workspace-key "${{ steps.get-logs-info.outputs.LOGWS_KEY }}"
           fi
 
-      # ------------------------------------------------------
-      # 7) Cria ou Atualiza o Container App, usando a nova imagem
-      # ------------------------------------------------------
+      # --------------------------  
+      # 7) Criar ou Atualizar o Container App propriamente dito
+      # --------------------------
       - name: Create or Update Container App
         run: |
           if ! az containerapp show \

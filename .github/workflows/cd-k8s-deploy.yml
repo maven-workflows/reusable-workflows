@@ -15,6 +15,7 @@ env:
   IMAGE_NAME: "demo-api"
   ENV_NAME: "ghactions-env"
   LOCATION: "eastus2"
+  DEBUG: "true"
 
 jobs:
   build-and-deploy:
@@ -34,13 +35,24 @@ jobs:
 
       - name: Create Dockerfile
         run: |
-          cat << EOF > Dockerfile
-          FROM eclipse-temurin:21-jre
-          COPY app-jar/*.jar /app.jar
-          WORKDIR /
-          EXPOSE 8080
-          ENTRYPOINT ["java", "-jar", "/app.jar"]
-          EOF
+          if [ "${{ env.DEBUG }}" = "true" ]; then
+            cat << EOF > Dockerfile
+            FROM eclipse-temurin:21-jre
+            COPY app-jar/*.jar /app.jar
+            WORKDIR /
+            EXPOSE 8080
+            CMD ["sleep", "3600"]
+            EOF
+          else
+            cat << EOF > Dockerfile
+            FROM eclipse-temurin:21-jre
+            COPY app-jar/*.jar /app.jar
+            WORKDIR /
+            EXPOSE 8080
+            ENTRYPOINT ["java", "-jar", "/app.jar"]
+            EOF
+          fi
+
 
 
       - name: Get ACR Credentials (Admin User must be enabled)

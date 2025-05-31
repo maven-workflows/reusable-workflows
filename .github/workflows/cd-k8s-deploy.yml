@@ -1,66 +1,44 @@
 name: Deploy to Azure Container Apps
 
 on:
-  workflow_call:
-    secrets:
-      AZURE_CREDENTIALS:
-        description: 'Credenciais do Azure em formato JSON para login'
-        required: true
+  push:
+    branches:
+      - main
 
 env:
   ARTIFACT_NAME: "app-jar"
   RESOURCE_GROUP: "azure-for-github-actions"
   ACR_NAME: "ghactions"
-  DEFAULT_ENV_NAME: "ghactions-env"
-  CA_NAME: "ghactions-ca"
+  CONTAINER_APP_NAME: "ghactions-ca"
   IMAGE_NAME: "demo-api"
   LOCATION: "eastus2"
 
 jobs:
-  deploy:
+  build-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Baixar Artifact do JAR
+      # Checkout do código-fonte
+      - name: Checkout do código
+        uses: actions/checkout@v3
+
+      # Download do artifact JAR gerado em etapas anteriores
+      - name: Baixar artifact JAR
         uses: actions/download-artifact@v4
         with:
           name: ${{ env.ARTIFACT_NAME }}
           path: ./app-jar
 
+      # Login no Azure usando Service Principal
       - name: Login no Azure
         uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Export Azure Credentials
-        run: |
-          echo "Exportando variáveis de ambiente do Azure..."
-          export AZURE_CLIENT_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r .clientId)
-          export AZURE_TENANT_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r .tenantId)
-          export AZURE_SUBSCRIPTION_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r .subscriptionId)
-          echo "AZURE_CLIENT_ID=$AZURE_CLIENT_ID" >> $GITHUB_ENV
-          echo "AZURE_TENANT_ID=$AZURE_TENANT_ID" >> $GITHUB_ENV
-          echo "AZURE_SUBSCRIPTION_ID=$AZURE_SUBSCRIPTION_ID" >> $GITHUB_ENV
-
-
-      - name: Exibir Variáveis de Ambiente do Azure
-        run: |
-          echo "AZURE_CLIENT_ID: $AZURE_CLIENT_ID"
-          echo "AZURE_SUBSCRIPTION_ID: $AZURE_SUBSCRIPTION_ID"
-          echo "AZURE_TENANT_ID: $AZURE_TENANT_ID"
-
-      - name: Conceder Role AcrPull ao Service Principal
-        run: |
-          SP_OBJECT_ID=$(az ad sp show --id "$AZURE_CLIENT_ID" --query objectId -o tsv)
-          ACR_RESOURCE_ID=$(az acr show --name "${{ env.ACR_NAME }}" --resource-group "${{ env.RESOURCE_GROUP }}" --query id -o tsv)
-          EXISTS=$(az role assignment list --assignee-object-id "$SP_OBJECT_ID" --scope "$ACR_RESOURCE_ID" --query "[?roleDefinitionName=='AcrPull'] | length(@)" -o tsv)
-          if [ "$EXISTS" -eq "0" ]; then
-            az role assignment create --assignee-object-id "$SP_OBJECT_ID" --role "AcrPull" --scope "$ACR_RESOURCE_ID"
-          fi
-
+      # Criação do Dockerfile dinamicamente
       - name: Criar Dockerfile
         run: |
-          cat << 'EOF' > Dockerfile
+          cat <<EOF > Dockerfile
           FROM openjdk:11-jre-slim
           COPY app-jar/*.jar /app.jar
           WORKDIR /
@@ -68,65 +46,19 @@ jobs:
           ENTRYPOINT ["java", "-jar", "/app.jar"]
           EOF
 
-      - name: Build e Push da Imagem Docker
+      # Build e push da imagem Docker para o ACR
+      - name: Build e Push da imagem Docker
         run: |
-          IMAGE_FULL="${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}"
-          docker build -f Dockerfile -t "$IMAGE_FULL" .
-          az acr login --name "${{ env.ACR_NAME }}"
-          docker push "$IMAGE_FULL"
+          IMAGE_TAG="${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}"
+          docker build -t $IMAGE_TAG .
+          az acr login --name ${{ env.ACR_NAME }}
+          docker push $IMAGE_TAG
 
-      - name: Criar Log Analytics Workspace se Necessário
+      # Implantação no Azure Container App
+      - name: Implantar no Azure Container App
         run: |
-          az monitor log-analytics workspace create \
+          IMAGE_TAG="${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}"
+          az containerapp update \
+            --name ${{ env.CONTAINER_APP_NAME }} \
             --resource-group ${{ env.RESOURCE_GROUP }} \
-            --workspace-name ${{ env.DEFAULT_ENV_NAME }}-logs \
-            --location ${{ env.LOCATION }}
-
-      - name: Obter Informações do Log Analytics
-        id: get-logs-info
-        run: |
-          LOGWS_CUSTOMER_ID=$(az monitor log-analytics workspace show --resource-group ${{ env.RESOURCE_GROUP }} --workspace-name ${{ env.DEFAULT_ENV_NAME }}-logs --query customerId -o tsv)
-          LOGWS_KEY=$(az monitor log-analytics workspace get-shared-keys --resource-group ${{ env.RESOURCE_GROUP }} --workspace-name ${{ env.DEFAULT_ENV_NAME }}-logs --query primarySharedKey -o tsv)
-          echo "LOGWS_CUSTOMER_ID=$LOGWS_CUSTOMER_ID" >> "$GITHUB_OUTPUT"
-          echo "LOGWS_KEY=$LOGWS_KEY" >> "$GITHUB_OUTPUT"
-
-      - name: Criar ou Obter Ambiente do Container Apps
-        id: find_or_create_env
-        run: |
-          EXISTING=$(az containerapp env list --resource-group ${{ env.RESOURCE_GROUP }} --query "[0].name" -o tsv)
-          if [ -z "$EXISTING" ] || [ "$EXISTING" == "None" ]; then
-            az containerapp env create \
-              --name ${{ env.DEFAULT_ENV_NAME }} \
-              --resource-group ${{ env.RESOURCE_GROUP }} \
-              --location ${{ env.LOCATION }} \
-              --logs-workspace-id "${{ steps.get-logs-info.outputs.LOGWS_CUSTOMER_ID }}" \
-              --logs-workspace-key "${{ steps.get-logs-info.outputs.LOGWS_KEY }}"
-            echo "::set-output name=env_name::${{ env.DEFAULT_ENV_NAME }}"
-          else
-            echo "::set-output name=env_name::$EXISTING"
-          fi
-
-      - name: Criar ou Atualizar Container App
-        run: |
-          FINAL_ENV="${{ steps.find_or_create_env.outputs.env_name }}"
-          ACR_LOGIN_SERVER="${{ env.ACR_NAME }}.azurecr.io"
-          IMAGE_FULL="$ACR_LOGIN_SERVER/${{ env.IMAGE_NAME }}:${{ github.sha }}"
-          if ! az containerapp show --name "${{ env.CA_NAME }}" --resource-group "${{ env.RESOURCE_GROUP }}" > /dev/null 2>&1; then
-            az containerapp create \
-              --name "${{ env.CA_NAME }}" \
-              --resource-group "${{ env.RESOURCE_GROUP }}" \
-              --environment "$FINAL_ENV" \
-              --image "$IMAGE_FULL" \
-              --ingress external \
-              --target-port 8080 \
-              --min-replicas 0 \
-              --max-replicas 2 \
-              --registry-server "$ACR_LOGIN_SERVER"
-          else
-            az containerapp update \
-              --name "${{ env.CA_NAME }}" \
-              --resource-group "${{ env.RESOURCE_GROUP }}" \
-              --environment "$FINAL_ENV" \
-              --image "$IMAGE_FULL" \
-              --registry-server "$ACR_LOGIN_SERVER"
-          fi
+            --image $IMAGE_TAG

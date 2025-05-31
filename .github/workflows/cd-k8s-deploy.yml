@@ -2,26 +2,20 @@ name: Deploy to Container Apps
 
 on:
   workflow_call:
-    # Somente o segredo AZURE_CREDENTIALS continua como secret obrigatório
     secrets:
       AZURE_CREDENTIALS:
         description: 'JSON do Service Principal para fazer login no Azure'
         required: true
 
-# ───────────────────────────────────────────────────────────────────────────────────────────
-# Aqui, definimos todas as variáveis de configuração como ENVIRONMENT VARIABLES,
-# deixando-as “em branco” por padrão. Quem chamar este reusable deverá sobrescrevê-las
-# no momento do call, definindo essas mesmas ENV vars no job chamador.
-# ───────────────────────────────────────────────────────────────────────────────────────────
 env:
-  ARTIFACT_NAME: "app-jar"      # (ex: "app-jar")
-  RESOURCE_GROUP: "azure-for-github-actions"     # (ex: "meuservicos-rg")
-  ACR_NAME: "ghactions"           # (ex: "meuacr")
-  ENV_NAME: "ghactions-env"           # (ex: "meuservico-env")
-  CA_NAME: "ghactions-ca"            # (ex: "minha-api-ca")
-  IMAGE_NAME: "demo-api"         # (ex: "minha-api")
-  LOCATION: "eastus2"           # (ex: "brazilsouth")
-  
+  ARTIFACT_NAME: "app-jar"        # nome do artifact que contém o JAR
+  RESOURCE_GROUP: "azure-for-github-actions"
+  ACR_NAME: "ghactions"
+  ENV_NAME: "ghactions-env"
+  CA_NAME: "ghactions-ca"
+  IMAGE_NAME: "demo-api"
+  LOCATION: "eastus2"
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -45,14 +39,43 @@ jobs:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
       # ------------------------------------------------------
-      # 3) Build & Push da imagem Docker (usa o JAR baixado em ./app-jar)
+      # 3) Cria o Dockerfile “na mão” antes de rodar o build
+      # ------------------------------------------------------
+      - name: Criar Dockerfile
+        run: |
+          cat << 'EOF' > Dockerfile
+          # ------------------------------------------------
+          # Esta é uma sugestão de Dockerfile para sua aplicação Java
+          # ------------------------------------------------
+          FROM openjdk:11-jre-slim
+
+          # Parâmetro que indica onde está o JAR “de fora”
+          ARG JAR_FILE
+          # Copia o JAR recebido via --build-arg para /app.jar
+          COPY \${JAR_FILE} /app.jar
+
+          # Definimos o diretório de trabalho (opcional)
+          WORKDIR /
+
+          # Expõe a porta na qual seu serviço Java escutará (ajuste se for outra porta)
+          EXPOSE 8080
+
+          # Comando padrão para iniciar o JAR
+          ENTRYPOINT ["java", "-jar", "/app.jar"]
+          EOF
+
+      # ------------------------------------------------------
+      # 4) Build & Push da imagem Docker (usa o JAR baixado em ./app-jar)
       # ------------------------------------------------------
       - name: Build & Push Docker Image
         run: |
-          # Verifica que o JAR está onde esperamos:
-          ls ./app-jar
+          # Verifica que o JAR e o Dockerfile estão onde esperamos:
+          echo "Conteúdo de ./app-jar:"
+          ls -l ./app-jar
+          echo "Conteúdo da raiz (deve ter Dockerfile):"
+          ls -l .
 
-          # Constrói a imagem usando o JAR baixado:
+          # Constrói a imagem usando o Dockerfile que acabamos de gerar:
           docker build \
             -f Dockerfile \
             -t ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }} \
@@ -64,19 +87,17 @@ jobs:
           docker push ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}
 
       # ------------------------------------------------------
-      # 4) Cria (se ainda não existir) o Log Analytics Workspace
+      # 5) Cria (se ainda não existir) o Log Analytics Workspace
       # ------------------------------------------------------
       - name: Create Log Analytics Workspace (if not exists)
         run: |
           az monitor log-analytics workspace create \
             --resource-group ${{ env.RESOURCE_GROUP }} \
-            --workspace-name ${{
-                env.ENV_NAME
-              }}-logs \
+            --workspace-name ${{ env.ENV_NAME }}-logs \
             --location ${{ env.LOCATION }}
 
       # ------------------------------------------------------
-      # 5) Cria (se ainda não existir) o Container Apps Environment
+      # 6) Cria (se ainda não existir) o Container Apps Environment
       # ------------------------------------------------------
       - name: Create Container Apps Environment (if not exists)
         run: |
@@ -88,13 +109,11 @@ jobs:
               --name ${{ env.ENV_NAME }} \
               --resource-group ${{ env.RESOURCE_GROUP }} \
               --location ${{ env.LOCATION }} \
-              --logs-workspace-name ${{
-                  env.ENV_NAME
-                }}-logs
+              --logs-workspace-name ${{ env.ENV_NAME }}-logs
           fi
 
       # ------------------------------------------------------
-      # 6) Cria ou Atualiza o Container App, usando a nova imagem
+      # 7) Cria ou Atualiza o Container App, usando a nova imagem
       # ------------------------------------------------------
       - name: Create or Update Container App
         run: |
@@ -102,7 +121,6 @@ jobs:
                --name ${{ env.CA_NAME }} \
                --resource-group ${{ env.RESOURCE_GROUP }} \
              > /dev/null 2>&1; then
-            # Se não existir ainda, criamos do zero:
             az containerapp create \
               --name ${{ env.CA_NAME }} \
               --resource-group ${{ env.RESOURCE_GROUP }} \
@@ -114,7 +132,6 @@ jobs:
               --max-replicas 2 \
               --registry-server ${{ env.ACR_NAME }}.azurecr.io
           else
-            # Se já existir, atualizamos apenas a imagem:
             az containerapp update \
               --name ${{ env.CA_NAME }} \
               --resource-group ${{ env.RESOURCE_GROUP }} \

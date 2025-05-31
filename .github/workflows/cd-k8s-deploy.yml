@@ -54,6 +54,9 @@ jobs:
           echo "📤 Pushing image to ACR"
           docker push "$IMAGE_TAG"
 
+      - name: Enable ACR admin user
+        run: az acr update -n ${{ env.ACR_NAME }} --admin-enabled true
+
       - name: Get ACR Credentials
         id: acr_creds
         run: |

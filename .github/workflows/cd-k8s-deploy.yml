@@ -44,44 +44,38 @@ jobs:
       - name: Criar Dockerfile
         run: |
           cat << 'EOF' > Dockerfile
-          # ------------------------------------------------
-          # Esta é uma sugestão de Dockerfile para sua aplicação Java
-          # ------------------------------------------------
           FROM openjdk:11-jre-slim
 
-          # Parâmetro que indica onde está o JAR “de fora”
-          ARG JAR_FILE
-          # Copia o JAR recebido via --build-arg para /app.jar
-          COPY \${JAR_FILE} /app.jar
+          # Copia qualquer JAR que esteja dentro de app-jar/ direto para /app.jar
+          COPY app-jar/*.jar /app.jar
 
-          # Definimos o diretório de trabalho (opcional)
           WORKDIR /
 
-          # Expõe a porta na qual seu serviço Java escutará (ajuste se for outra porta)
           EXPOSE 8080
 
-          # Comando padrão para iniciar o JAR
           ENTRYPOINT ["java", "-jar", "/app.jar"]
           EOF
+
 
       # ------------------------------------------------------
       # 4) Build & Push da imagem Docker (usa o JAR baixado em ./app-jar)
       # ------------------------------------------------------
       - name: Build & Push Docker Image
         run: |
-          # Captura o nome exato do JAR que foi baixado:
-          JAR_NAME=$(ls ./app-jar/*.jar | head -n1)
+          echo "Conteúdo de ./app-jar:"
+          ls -l ./app-jar
+          echo "Conteúdo da raiz (deve ter Dockerfile):"
+          ls -l .
             
-          echo "Usando JAR: ${JAR_NAME}"
-            
+          # Não precisamos mais de --build-arg, pois o Dockerfile já faz glob em app-jar/*.jar
           docker build \
             -f Dockerfile \
-            --build-arg JAR_FILE=${JAR_NAME} \
             -t ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }} \
             .
             
           az acr login --name ${{ env.ACR_NAME }}
           docker push ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}
+
 
 
       # ------------------------------------------------------

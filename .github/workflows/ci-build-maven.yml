@@ -13,6 +13,11 @@ on:
         required: true
         type: boolean
         default: true
+      application_target:
+        description: 'Target da aplicação (ex: class-lib ou deploy_app)'
+        required: false
+        type: string
+        default: class-lib
 
 jobs:
   build:
@@ -69,6 +74,7 @@ jobs:
           path: target/*.jar
 
       - name: Upload POM Artifact
+        if: ${{ inputs.application_target == 'class-lib' }}
         uses: actions/upload-artifact@v4
         with:
           name: app-pom 

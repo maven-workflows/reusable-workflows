@@ -32,7 +32,7 @@ jobs:
           echo "Verificando conteúdo do diretório:"
           ls -la ./jar-artifact-directory/
           
-          jarFile=./jar-artifact-directory/*.jar
+          jarFile=$(find ./jar-artifact-directory -name "*.jar")
           echo "Arquivo JAR encontrado: $jarFile"
           
           mvn --batch-mode deploy:deploy-file \

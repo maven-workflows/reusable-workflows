@@ -31,7 +31,7 @@ jobs:
           path: ./app-jar
 
       - name: Deploy to Azure Container Apps
-        uses: ./infra-lib/.github/actions/deploy-container-app
+        uses: maven-workflows/actions/actions/deploy-container-app@main
         with:
           azure_credentials: ${{ secrets.AZURE_CREDENTIALS }}
           acr_name: ${{ env.ACR_NAME }}     

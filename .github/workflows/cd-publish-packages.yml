@@ -28,6 +28,10 @@ jobs:
           name: app-pom 
           path: ./pom-artifact-directory
 
+      - name: Find JAR file
+        id: find-jar
+        run: echo "jarfile=$(ls ./jar-artifact-directory/*.jar)" >> $GITHUB_OUTPUT
+
       - name: Publish package to GitHub Packages
         run: |
           mvn --batch-mode deploy:deploy-file \

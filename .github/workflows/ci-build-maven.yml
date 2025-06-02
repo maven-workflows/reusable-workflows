@@ -5,14 +5,14 @@ on:
     inputs:
       run-tests:
         description: 'Run Maven tests?'
-        required: false
-        type: string
-        default: "true"
+        required: true
+        type: boolean
+        default: true
       run-sonar-analysis:
         description: 'Execute Sonar analysis?'
-        required: false
-        type: string
-        default: "true"
+        required: true
+        type: boolean
+        default: true
 
 jobs:
   build:

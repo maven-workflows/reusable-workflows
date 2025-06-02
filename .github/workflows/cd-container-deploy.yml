@@ -34,3 +34,4 @@ jobs:
           resource_group: ${{ env.RESOURCE_GROUP }}
           environment_name: ${{ env.ENV_NAME }}
           location: ${{ env.LOCATION }}
+          

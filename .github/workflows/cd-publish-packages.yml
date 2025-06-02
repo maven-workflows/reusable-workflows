@@ -1,7 +1,7 @@
-name: Publish Maven Package (Fixed Artifact and File Names)
+name: Publish Maven Package from Artifacts
 
 on:
-  workflow_call: 
+  workflow_call:
 
 jobs:
   publish-package:
@@ -18,86 +18,19 @@ jobs:
       - name: Download JAR artifact
         uses: actions/download-artifact@v4
         with:
-          name: app-jar 
+          name: app-jar
           path: ./jar-artifact-directory
 
       - name: Download POM artifact
         uses: actions/download-artifact@v4
         with:
-          name: app-pom 
+          name: app-pom
           path: ./pom-artifact-directory
-
-      - name: Debug - List Working Directory
-        run: |
-          echo "=== Current Working Directory ==="
-          pwd
-          echo "=== Contents of Current Directory ==="
-          ls -la
-
-      - name: Debug - JAR Directory Content
-        run: |
-          echo "=== Contents of JAR Directory ==="
-          ls -R ./jar-artifact-directory
-          echo "=== Detailed JAR Directory Structure ==="
-          find ./jar-artifact-directory -type f -ls
-          echo "=== File Types in JAR Directory ==="
-          file ./jar-artifact-directory/*
-
-      - name: Debug - POM Directory Content
-        run: |
-          echo "=== Contents of POM Directory ==="
-          ls -R ./pom-artifact-directory
-          echo "=== Detailed POM Directory Structure ==="
-          find ./pom-artifact-directory -type f -ls
-          echo "=== Content of pom.xml if exists ==="
-          if [ -f "./pom-artifact-directory/pom.xml" ]; then
-            cat ./pom-artifact-directory/pom.xml
-          else
-            echo "pom.xml not found"
-          fi
-
-      - name: Debug - Find Command Test
-        run: |
-          echo "=== Finding JAR files ==="
-          find . -name "*.jar" -type f
-          echo "=== Finding XML files ==="
-          find . -name "*.xml" -type f
-
-      - name: Find JAR file
-        id: find-jar
-        run: |
-          echo "=== Attempting to find JAR file ==="
-          # List all files first
-          ls -R ./jar-artifact-directory
-          # Try to find any .jar file
-          JAR_FILE=$(find ./jar-artifact-directory -name "*.jar" -type f | head -n 1)
-          if [ -n "$JAR_FILE" ]; then
-            echo "Found JAR file: $JAR_FILE"
-            echo "jarfile=$JAR_FILE" >> $GITHUB_OUTPUT
-          else
-            echo "No JAR file found!"
-            exit 1
-          fi
-
-      - name: Debug - Show Found JAR File
-        run: |
-          echo "=== JAR File Found ==="
-          echo "JAR file path: ${{ steps.find-jar.outputs.jarfile }}"
-          if [ -f "${{ steps.find-jar.outputs.jarfile }}" ]; then
-            echo "JAR file exists at specified path"
-            ls -l "${{ steps.find-jar.outputs.jarfile }}"
-          else
-            echo "JAR file does NOT exist at specified path"
-          fi
 
       - name: Publish package to GitHub Packages
         run: |
-          echo "=== Publishing Package ==="
-          echo "Using JAR file: ${{ steps.find-jar.outputs.jarfile }}"
-          echo "Using POM file: ./pom-artifact-directory/pom.xml"
-          
           mvn --batch-mode deploy:deploy-file \
-            -Dfile="${{ steps.find-jar.outputs.jarfile }}" \
+            -Dfile="./jar-artifact-directory/*.jar" \
             -DpomFile="./pom-artifact-directory/pom.xml" \
             -DrepositoryId="github" \
             -Durl="https://maven.pkg.github.com/${{ github.repository_owner }}/${{ github.event.repository.name }}"

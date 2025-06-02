@@ -1,0 +1,99 @@
+name: 'Deploy to Azure Container Apps'
+description: 'Faz login no Azure, gera Dockerfile, faz build/push no ACR e faz deploy na Container App'
+inputs:
+  azure_credentials:
+    description: 'Segredos JSON para login no Azure (AZURE_CREDENTIALS)'
+    required: true
+
+  acr_name:
+    description: 'Nome do Azure Container Registry (somente o prefixo, sem .azurecr.io)'
+    required: true
+
+  image_name:
+    description: 'Nome do repositório/imagem dentro do ACR'
+    required: true
+
+  container_app_name:
+    description: 'Nome da Azure Container App a ser criada/atualizada'
+    required: true
+
+  resource_group:
+    description: 'Resource Group onde está o Container App'
+    required: true
+
+  environment_name:
+    description: 'Nome do Environment do Container Apps (ex.: my-env)'
+    required: true
+
+  location:
+    description: 'Região (location) para o deploy (ex.: eastus)'
+    required: true
+
+  app_jar_path:
+    description: 'Caminho relativo onde está o .jar da aplicação (ex.: app-jar/*.jar)'
+    required: false
+    default: 'app-jar/*.jar'
+
+  target_port:
+    description: 'Porta que o container expõe (padrão: 8080)'
+    required: false
+    default: '8080'
+
+runs:
+  using: "composite"
+  steps:
+    - name: Azure Login
+      uses: azure/login@v1
+      with:
+        creds: ${{ inputs.azure_credentials }}
+
+    - name: Create Dockerfile
+      run: |
+        cat << EOF > Dockerfile
+        FROM eclipse-temurin:21-jre
+        COPY ${{ inputs.app_jar_path }} /app.jar
+        WORKDIR /
+        EXPOSE ${{ inputs.target_port }}
+        ENTRYPOINT ["java", "-jar", "/app.jar"]
+        EOF
+
+    - name: Get ACR Credentials
+      id: acr_creds
+      run: |
+        ACR_USERNAME=$(az acr credential show --name "${{ inputs.acr_name }}" --query "username" -o tsv)
+        ACR_PASSWORD=$(az acr credential show --name "${{ inputs.acr_name }}" --query "passwords[0].value" -o tsv)
+        echo "ACR_USERNAME=$ACR_USERNAME" >> $GITHUB_OUTPUT
+        echo "ACR_PASSWORD=$ACR_PASSWORD" >> $GITHUB_OUTPUT
+
+    - name: Login on ACR Docker Registry
+      run: |
+        echo "${{ steps.acr_creds.outputs.ACR_PASSWORD }}" \
+          | docker login ${{ inputs.acr_name }}.azurecr.io \
+          -u ${{ steps.acr_creds.outputs.ACR_USERNAME }} --password-stdin
+
+    - name: Build and Push Docker Image
+      run: |
+        IMAGE_TAG="${{ inputs.acr_name }}.azurecr.io/${{ inputs.image_name }}:${GITHUB_SHA}"
+        docker build -t "$IMAGE_TAG" .
+        docker push "$IMAGE_TAG"
+
+    - name: Install Azure Container Apps Extension
+      run: |
+        if ! az extension show --name containerapp &> /dev/null; then
+          az extension add --name containerapp
+        fi
+
+    - name: Deploy Container App
+      run: |
+        IMAGE_TAG="${{ inputs.acr_name }}.azurecr.io/${{ inputs.image_name }}:${GITHUB_SHA}"
+        az containerapp up \
+          --name "${{ inputs.container_app_name }}" \
+          --resource-group "${{ inputs.resource_group }}" \
+          --environment "${{ inputs.environment_name }}" \
+          --image "$IMAGE_TAG" \
+          --location "${{ inputs.location }}" \
+          --ingress external \
+          --target-port ${{ inputs.target_port }} \
+          --registry-server "${{ inputs.acr_name }}.azurecr.io" \
+          --registry-username "${{ steps.acr_creds.outputs.ACR_USERNAME }}" \
+          --registry-password "${{ steps.acr_creds.outputs.ACR_PASSWORD }}"

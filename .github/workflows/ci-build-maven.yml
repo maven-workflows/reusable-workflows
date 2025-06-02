@@ -6,13 +6,13 @@ on:
       run-tests:
         description: 'Run Maven tests?'
         required: false
-        type: boolean
-        default: true
+        type: string
+        default: "true"
       run-sonar-analysis:
         description: 'Execute Sonar analysis?'
         required: false
-        type: boolean
-        default: true
+        type: string
+        default: "true"
 
 jobs:
   build:

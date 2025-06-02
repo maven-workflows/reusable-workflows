@@ -29,8 +29,9 @@ jobs:
 
       - name: Publish package to GitHub Packages
         run: |
+          jarFile=./jar-artifact-directory/*.jar
           mvn --batch-mode deploy:deploy-file \
-            -Dfile="./jar-artifact-directory/*.jar" \
+            -Dfile="$jarFile" \
             -DpomFile="./pom-artifact-directory/pom.xml" \
             -DrepositoryId="github" \
             -Durl="https://maven.pkg.github.com/${{ github.repository_owner }}/${{ github.event.repository.name }}"

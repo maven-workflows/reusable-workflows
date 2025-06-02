@@ -1,8 +1,8 @@
 # Workflow Name (English)
-name: Publish Maven Package from Artifacts
+name: Publish Maven Package (Fixed Artifact and File Names)
 
 on:
-  workflow_call:
+  workflow_call: 
 
 jobs:
   publish-package:
@@ -19,19 +19,19 @@ jobs:
       - name: Download JAR artifact
         uses: actions/download-artifact@v4
         with:
-          name: app-jar
+          name: app-jar 
           path: ./jar-artifact-directory
 
       - name: Download POM artifact
         uses: actions/download-artifact@v4
         with:
-          name: app-pom
-          path: ./pom-artifact-directory 
+          name: app-pom 
+          path: ./pom-artifact-directory
 
       - name: Publish package to GitHub Packages
         run: |
           mvn --batch-mode deploy:deploy-file \
-            -Dfile="./jar-artifact-directory/${{ inputs.jar-path-in-artifact }}" \
+            -Dfile="./jar-artifact-directory/application.jar" \
             -DpomFile="./pom-artifact-directory/pom.xml" \
             -DrepositoryId="github" \
             -Durl="https://maven.pkg.github.com/${{ github.repository_owner }}/${{ github.event.repository.name }}"

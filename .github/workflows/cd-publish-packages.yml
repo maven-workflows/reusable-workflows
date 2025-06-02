@@ -35,6 +35,7 @@ jobs:
             -Dfile="$jarFile" \
             -DpomFile="./pom-artifact-directory/pom.xml" \
             -DrepositoryId="github" \
-            -Durl="https://maven.pkg.github.com/${{ github.repository_owner }}/${{ github.event.repository.name }}"
+            -Durl="https://maven.pkg.github.com/${{ github.repository_owner }}/${{ github.event.repository.name }}" \
+            -Dmaven.deploy.skip-duplicate=true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

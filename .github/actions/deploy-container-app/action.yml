@@ -56,6 +56,7 @@ runs:
         EXPOSE ${{ inputs.target_port }}
         ENTRYPOINT ["java", "-jar", "/app.jar"]
         EOF
+      shell: bash
 
     - name: Get ACR Credentials
       id: acr_creds
@@ -64,24 +65,28 @@ runs:
         ACR_PASSWORD=$(az acr credential show --name "${{ inputs.acr_name }}" --query "passwords[0].value" -o tsv)
         echo "ACR_USERNAME=$ACR_USERNAME" >> $GITHUB_OUTPUT
         echo "ACR_PASSWORD=$ACR_PASSWORD" >> $GITHUB_OUTPUT
+      shell: bash
 
     - name: Login on ACR Docker Registry
       run: |
         echo "${{ steps.acr_creds.outputs.ACR_PASSWORD }}" \
           | docker login ${{ inputs.acr_name }}.azurecr.io \
           -u ${{ steps.acr_creds.outputs.ACR_USERNAME }} --password-stdin
+      shell: bash
 
     - name: Build and Push Docker Image
       run: |
         IMAGE_TAG="${{ inputs.acr_name }}.azurecr.io/${{ inputs.image_name }}:${GITHUB_SHA}"
         docker build -t "$IMAGE_TAG" .
         docker push "$IMAGE_TAG"
+      shell: bash
 
     - name: Install Azure Container Apps Extension
       run: |
         if ! az extension show --name containerapp &> /dev/null; then
           az extension add --name containerapp
         fi
+      shell: bash
 
     - name: Deploy Container App
       run: |
@@ -97,3 +102,4 @@ runs:
           --registry-server "${{ inputs.acr_name }}.azurecr.io" \
           --registry-username "${{ steps.acr_creds.outputs.ACR_USERNAME }}" \
           --registry-password "${{ steps.acr_creds.outputs.ACR_PASSWORD }}"
+      shell: bash

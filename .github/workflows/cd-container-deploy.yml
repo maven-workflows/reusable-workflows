@@ -2,11 +2,7 @@ name: Deploy to Azure Container Apps
 
 on:
   workflow_call:
-    secrets:
-      AZURE_CREDENTIALS:
-        description: 'JSON do Service Principal para login no Azure'
-        required: true
-
+  
 env:
   ARTIFACT_NAME: "app-jar"
   RESOURCE_GROUP: "azure-for-github-actions"

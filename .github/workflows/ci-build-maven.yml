@@ -6,13 +6,13 @@ on:
       run-tests:
         description: 'Run Maven tests?'
         required: false
-        type: boolean
-        default: true
+        type: string
+        default: 'true'
       run-sonar-analysis:
         description: 'Execute Sonar analysis?'
         required: false
-        type: boolean
-        default: true
+        type: string
+        default: 'true'
 
 jobs:
   build:
@@ -44,14 +44,14 @@ jobs:
         run: mvn test
 
       - name: Cache Sonar Scanner
-        if: ${{ inputs.run-sonar-analysis }}
+        if: ${{ inputs.run-sonar-analysis == 'true' }}
         uses: actions/cache@v3
         with:
           path: ~/.sonar/cache
           key: sonar-${{ runner.os }}-${{ hashFiles('**/pom.xml') }}
 
       - name: Analyze with SonarCloud
-        if: ${{ inputs.run-sonar-analysis }}
+        if: ${{ inputs.run-sonar-analysis == 'true' }}
         run: |
           project_key="${GITHUB_REPOSITORY##*/}"
           mvn org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \

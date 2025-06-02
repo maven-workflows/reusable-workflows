@@ -19,10 +19,9 @@ jobs:
         uses: maven-workflows/actions/.github/actions/deploy-container-app@main
         with:
           azure_credentials: ${{ secrets.AZURE_CREDENTIALS }}
-          acr_name:            ${{ vars.AZ_ACR_NAME }}
-          image_name:          ${{ vars.AZ_IMAGE_NAME }}
-          container_app_name:  ${{ vars.AZ_CONTAINER_APP }}
-          resource_group:      ${{ vars.AZ_RESOURCE_GROUP }}
-          environment_name:    ${{ vars.AZ_ENV_NAME }}
-          location:            ${{ vars.AZ_LOCATION }}
-          
+          acr_name: ${{ vars.AZ_ACR_NAME }}
+          image_name: ${{ vars.AZ_IMAGE_NAME }}
+          container_app_name: ${{ vars.AZ_CONTAINER_APP }}
+          resource_group: ${{ vars.AZ_RESOURCE_GROUP }}
+          environment_name: ${{ vars.AZ_ENV_NAME }}
+          location: ${{ vars.AZ_LOCATION }}

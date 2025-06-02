@@ -65,3 +65,10 @@ jobs:
         with:
           name: app-jar
           path: target/*.jar
+
+      - name: Upload POM Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-pom 
+          path: pom.xml 
+          if-no-files-found: error

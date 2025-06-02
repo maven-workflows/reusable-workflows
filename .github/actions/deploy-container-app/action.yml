@@ -43,10 +43,7 @@ runs:
   using: "composite"
   steps:
     - name: Azure Login
-      uses: azure/login@v1
-      with:
-        creds: ${{ inputs.azure_credentials }}
-
+  
     - name: Create Dockerfile
       run: |
         cat << EOF > Dockerfile
@@ -55,7 +52,10 @@ runs:
         WORKDIR /
         EXPOSE ${{ inputs.target_port }}
         ENTRYPOINT ["java", "-jar", "/app.jar"]
-        EOF
+        EOF    uses: azure/login@v1
+      with:
+        creds: ${{ inputs.azure_credentials }}
+
       shell: bash
 
     - name: Get ACR Credentials

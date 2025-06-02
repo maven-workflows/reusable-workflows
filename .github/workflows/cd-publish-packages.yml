@@ -29,11 +29,7 @@ jobs:
 
       - name: Publish package to GitHub Packages
         run: |
-          echo "Verificando conteúdo do diretório:"
-          ls -la ./jar-artifact-directory/
-          
           jarFile=$(find ./jar-artifact-directory -name "*.jar")
-          echo "Arquivo JAR encontrado: $jarFile"
           
           mvn --batch-mode deploy:deploy-file \
             -Dfile="$jarFile" \

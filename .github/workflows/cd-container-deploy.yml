@@ -2,15 +2,6 @@ name: Deploy to Azure Container Apps
 
 on:
   workflow_call:
-  
-env:
-  ARTIFACT_NAME: "app-jar"
-  RESOURCE_GROUP: "azure-for-github-actions"
-  ACR_NAME: "ghactions"
-  CONTAINER_APP_NAME: "ghactions-ca"
-  IMAGE_NAME: "demo-api"
-  ENV_NAME: "ghactions-env"
-  LOCATION: "eastus2"
 
 jobs:
   deploy:
@@ -21,17 +12,17 @@ jobs:
       - name: Download JAR Artifact
         uses: actions/download-artifact@v4
         with:
-          name: ${{ env.ARTIFACT_NAME }}
+          name: app-jar
           path: ./app-jar
 
       - name: Deploy to Azure Container Apps
         uses: maven-workflows/actions/.github/actions/deploy-container-app@main
         with:
           azure_credentials: ${{ secrets.AZURE_CREDENTIALS }}
-          acr_name: ${{ env.ACR_NAME }}     
-          image_name: ${{ env.IMAGE_NAME }}
-          container_app_name: ${{ env.CONTAINER_APP_NAME }}
-          resource_group: ${{ env.RESOURCE_GROUP }}
-          environment_name: ${{ env.ENV_NAME }}
-          location: ${{ env.LOCATION }}
+          acr_name:            ${{ vars.AZ_ACR_NAME }}
+          image_name:          ${{ vars.AZ_IMAGE_NAME }}
+          container_app_name:  ${{ vars.AZ_CONTAINER_APP }}
+          resource_group:      ${{ vars.AZ_RESOURCE_GROUP }}
+          environment_name:    ${{ vars.AZ_ENV_NAME }}
+          location:            ${{ vars.AZ_LOCATION }}
           

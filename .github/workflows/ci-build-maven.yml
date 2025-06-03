@@ -71,7 +71,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: app-jar
+          retention: 3
           path: target/*.jar
+          if-no-files-found: warn
 
       - name: Upload POM Artifact
         if: ${{ inputs.application_target == 'class-lib' }}
@@ -79,4 +81,5 @@ jobs:
         with:
           name: app-pom 
           path: pom.xml 
-          if-no-files-found: error
+          retention: 3
+          if-no-files-found: warn

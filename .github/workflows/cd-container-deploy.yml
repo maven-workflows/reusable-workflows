@@ -20,8 +20,8 @@ jobs:
         with:
           azure_credentials: ${{ secrets.AZURE_CREDENTIALS }}
           acr_name: ${{ vars.AZ_ACR_NAME }}
-          image_name: ${{ vars.AZ_IMAGE_NAME }}
-          container_app_name: ${{ vars.AZ_CONTAINER_APP }}
+          image_name: ${{ github.event.repository.name }}
+          container_app_name: ${{ github.event.repository.name }}
           resource_group: ${{ vars.AZ_RESOURCE_GROUP }}
           environment_name: ${{ vars.AZ_ENV_NAME }}
           location: ${{ vars.AZ_LOCATION }}

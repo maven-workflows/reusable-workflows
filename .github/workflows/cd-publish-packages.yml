@@ -12,7 +12,7 @@ jobs:
       - name: Set up Java and Maven
         uses: actions/setup-java@v4
         with:
-          java-version: '21'
+          java-version: ${{ vars.JAVA_VERSION }}
           distribution: 'temurin'
 
       - name: Download JAR artifact
@@ -21,21 +21,29 @@ jobs:
           name: app-jar
           path: ./jar-artifact-directory
 
-      - name: Download POM artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: app-pom
-          path: ./pom-artifact-directory
+      - name: Generate Dynamic Version
+        id: version
+        run: |
+          VERSION="1.${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}"
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "Generated version: ${VERSION}"
 
       - name: Publish package to GitHub Packages
         run: |
           jarFile=$(find ./jar-artifact-directory -name "*.jar")
           
+          ARTIFACT_ID="${GITHUB_REPOSITORY##*/}"
+
+          GROUP_ID="${GITHUB_REPOSITORY_OWNER,,}"
+          
           mvn --batch-mode deploy:deploy-file \
             -Dfile="$jarFile" \
-            -DpomFile="./pom-artifact-directory/pom.xml" \
+            -DgroupId="$GROUP_ID" \
+            -DartifactId="$ARTIFACT_ID" \
+            -Dversion="${{ steps.version.outputs.version }}" \
+            -Dpackaging="jar" \
             -DrepositoryId="github" \
-            -Durl="https://maven.pkg.github.com/${{ github.repository_owner }}/${{ github.event.repository.name }}" \
+            -Durl="https://maven.pkg.github.com/${{ github.repository }}" \
             -Dmaven.deploy.skip-duplicate=true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -40,14 +40,14 @@ jobs:
           echo "image_tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
 
       - name: Push to ACR
-        uses: ./.github/actions/push-acr
+        uses: maven-workflows/actions/.github/actions/push-acr
         with:
           azure_credentials: ${{ secrets.AZURE_CREDENTIALS }}
           acr_name: ${{ vars.AZ_ACR_NAME }}
           image_tag: ${{ steps.build.outputs.image_tag }}
 
       - name: Deploy to Container Apps
-        uses: ./.github/actions/deploy-container-apps
+        uses: maven-workflows/actions/.github/actions/deploy-container-apps
         with:
           azure_credentials: ${{ secrets.AZURE_CREDENTIALS }}
           acr_name: ${{ vars.AZ_ACR_NAME }}

@@ -47,7 +47,7 @@ jobs:
           image_tag: ${{ steps.build.outputs.image_tag }}
 
       - name: Deploy to Container Apps
-        uses: maven-workflows/actions/.github/actions/deploy-container-apps@main
+        uses: maven-workflows/actions/.github/actions/deploy-container-app@main
         with:
           azure_credentials: ${{ secrets.AZURE_CREDENTIALS }}
           acr_name: ${{ vars.AZ_ACR_NAME }}
@@ -55,5 +55,5 @@ jobs:
           resource_group: ${{ vars.AZ_RESOURCE_GROUP }}
           environment_name: ${{ vars.AZ_ENV_NAME }}
           location: ${{ vars.AZ_LOCATION }}
-          image_tag: ${{ steps.build.outputs.image_tag }}
+          image_name: ${{ github.event.repository.name }}
           target_port: ${{ inputs.target_port }}

@@ -1,0 +1,55 @@
+# .github/workflows/build-and-push-image.yml
+name: Build &amp; Push Image
+
+on:
+  workflow_call:
+    inputs:
+      target_port:
+        description: 'Porta que o container expõe (para o Dockerfile)'
+        required: false
+        type: string
+        default: '8080'
+
+jobs:
+  build-and-publish-image:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v3
+
+      - name: Download JAR Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: app-jar
+          path: ./app-jar
+
+      - name: Criar Dockerfile
+        run: |
+          cat << EOF > Dockerfile
+          FROM eclipse-temurin:21-jre
+          COPY app-jar/*.jar /app.jar
+          WORKDIR /
+          EXPOSE ${{ inputs.target_port }}
+          ENTRYPOINT ["java", "-jar", "/app.jar"]
+          EOF
+
+      - name: Login no ACR
+        run: |
+          echo "${{ secrets.AZURE_CREDENTIALS }}" | az login --service-principal --username $(jq -r .clientId) --password $(jq -r .clientSecret) --tenant $(jq -r .tenantId)
+          az account set --subscription "$(jq -r .subscriptionId <<< "${{ secrets.AZURE_CREDENTIALS }}")"
+          az acr login --name "${{ vars.AZ_ACR_NAME }}"
+
+      - name: Build Docker Image
+        id: build
+        run: |
+          IMAGE_TAG="${{ vars.AZ_ACR_NAME }}/${{ github.event.repository.name }}:${GITHUB_SHA}"
+          docker build -t "$IMAGE_TAG" .
+          echo "image_tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      - name: Push Image para ACR
+        run: |
+          docker push "${{ steps.build.outputs.image_tag }}"
+
+      - name: Expor output image_tag
+        run: echo "image_tag=${{ steps.build.outputs.image_tag }}" >> $GITHUB_OUTPUT

@@ -54,14 +54,14 @@ jobs:
 
       - name: SonarCloud Scan
         if: ${{ inputs.run-sonar-analysis }}
-        uses: SonarSource/sonarcloud-github-action@v5
+        uses: SonarSource/sonarcloud-github-action@master
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
           args: >
             -Dsonar.organization=${{ secrets.SONAR_ORGANIZATION }}
-            -Dsonar.projectKey=${github.event.repository.name}
+            -Dsonar.projectKey=${{GITHUB_REPOSITORY##*/}}
             -Dsonar.sources=src/main/java
             -Dsonar.tests=src/test/java
             -Dsonar.java.binaries=target/classes

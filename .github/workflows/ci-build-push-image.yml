@@ -31,19 +31,21 @@ jobs:
           ENTRYPOINT ["java", "-jar", "/app.jar"]
           EOF
 
-      - name: Build Docker Image
-        id: build
+      - name: Get ACR Credentials
+        id: acr_creds
         run: |
-          IMAGE_TAG="${{ vars.AZ_ACR_NAME }}.azurecr.io/${{ github.event.repository.name }}:${GITHUB_SHA}"
-          docker build -t "$IMAGE_TAG" .
-          echo "image_tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
+          ACR_USERNAME=$(az acr credential show --name "${{ vars.AZ_ACR_NAME }}" --query "username" -o tsv)
+          ACR_PASSWORD=$(az acr credential show --name "${{ vars.AZ_ACR_NAME }}" --query "passwords[0].value" -o tsv)
+          echo "ACR_USERNAME=$ACR_USERNAME" >> $GITHUB_OUTPUT
+          echo "ACR_PASSWORD=$ACR_PASSWORD" >> $GITHUB_OUTPUT
+        shell: bash
 
       - name: Login no Azure Container Registry
         uses: azure/docker-login@v2
         with:
           login-server: ${{ vars.AZ_ACR_NAME }}.azurecr.io
-          username: ${{ secrets.AZ_ACR_USERNAME }}
-          password: ${{ secrets.AZ_ACR_PASSWORD }}
+          username: ${{ steps.acr_creds.outputs.acr_username }}
+          password: ${{ steps.acr_creds.outputs.acr_password }}
 
       - name: Build & Push Docker Image
         id: docker_build

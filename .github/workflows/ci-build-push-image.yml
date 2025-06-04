@@ -12,7 +12,7 @@ on:
         value: ${{ jobs.build-and-publish-image.outputs.acr_password }}
 
 jobs:
-  build-and-publish-image:
+  docker-build:
     runs-on: ubuntu-latest
 
     outputs:

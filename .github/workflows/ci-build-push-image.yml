@@ -46,4 +46,5 @@ jobs:
         with:
           azure_credentials: ${{ secrets.AZURE_CREDENTIALS }}
           acr_name: ${{ vars.AZ_ACR_NAME }}
-          image_tag: $IMAGE_TAG
+          image_tag: ${{ steps.build.outputs.image_tag }}
+

@@ -58,5 +58,5 @@ jobs:
         with:
           context: .
           push: true
-          tags: ${{ vars.AZ_ACR_NAME }}.azurecr.io/${{ github.event.repository.name }}:${GITHUB_SHA}
+          tags: ${{ vars.AZ_ACR_NAME }}.azurecr.io/${{ github.event.repository.name }}:${{ github.sha }}
 

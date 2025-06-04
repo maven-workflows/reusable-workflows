@@ -9,14 +9,6 @@ on:
         required: false
         type: string
         default: '8080'
-      acr_name:
-        description: 'Nome do Azure Container Registry (ex: meuacr)'
-        required: true
-        type: string
-    secrets:
-      AZURE_CREDENTIALS:
-        description: 'Credenciais JSON do Azure (Service Principal)'
-        required: true
 
 jobs:
   build-and-publish-image:
@@ -45,7 +37,7 @@ jobs:
       - name: Build Docker Image
         id: build
         run: |
-          IMAGE_TAG="${{ inputs.acr_name }}.azurecr.io/${{ github.event.repository.name }}:${GITHUB_SHA}"
+          IMAGE_TAG="${{ vars.ACR_NAME }}.azurecr.io/${{ github.event.repository.name }}:${GITHUB_SHA}"
           docker build -t "$IMAGE_TAG" .
           echo "image_tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
 
@@ -53,8 +45,5 @@ jobs:
         uses: maven-workflows/actions/.github/actions/push-acr@main
         with:
           azure_credentials: ${{ secrets.AZURE_CREDENTIALS }}
-          acr_name: ${{ inputs.acr_name }}
-          image_tag: ${{ steps.build.outputs.image_tag }}
-
-      - name: Expor output image_tag
-        run: echo "image_tag=${{ steps.build.outputs.image_tag }}" >> $GITHUB_OUTPUT
+          acr_name: ${{ vars.ACR_NAME }}
+          image_tag: ${{ github.event.repository.name }}

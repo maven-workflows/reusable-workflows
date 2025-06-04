@@ -24,6 +24,12 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS}}
+
       - name: Install Azure CLI extension
         uses: azure/cli@v2
         with:

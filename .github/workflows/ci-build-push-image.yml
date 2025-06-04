@@ -9,11 +9,23 @@ on:
         required: false
         type: string
         default: '8080'
+    
+    outputs:
+      acr_username:
+        description: "Username do ACR"
+        value: ${{ jobs.build-and-publish-image.outputs.acr_username }}
+      acr_password:
+        description: "Password do ACR"
+        value: ${{ jobs.build-and-publish-image.outputs.acr_password }}
 
 jobs:
   build-and-publish-image:
     runs-on: ubuntu-latest
 
+    outputs:
+      acr_username: ${{ steps.acr_creds.outputs.ACR_USERNAME }}
+      acr_password: ${{ steps.acr_creds.outputs.ACR_PASSWORD }}
+      
     steps:
       - name: Download JAR Artifact
         uses: actions/download-artifact@v4

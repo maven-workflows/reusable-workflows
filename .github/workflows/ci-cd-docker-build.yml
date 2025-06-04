@@ -1,4 +1,3 @@
-# .github/workflows/build-and-push-image.yml
 name: Build & Push Image
 
 on:

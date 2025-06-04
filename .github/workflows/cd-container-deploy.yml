@@ -2,12 +2,6 @@ name: Deploy to Azure Container Apps
 
 on:
   workflow_call:
-    inputs:
-      target_port:
-        description: 'Porta que o container expõe'
-        required: false
-        type: string
-        default: '8080'
       acr_username:
         description: 'Username do ACR'
         required: true
@@ -16,9 +10,6 @@ on:
         description: 'Password do ACR'
         required: true
         type: string
-    secrets:
-      AZURE_CREDENTIALS:
-        required: true
 
 jobs:
   deploy:
@@ -44,7 +35,7 @@ jobs:
           imageToDeploy: ${{ vars.AZ_ACR_NAME }}.azurecr.io/${{ github.event.repository.name }}:${{ github.sha }}
           containerAppEnvironment: ${{ vars.AZ_ENV_NAME }}
           location: ${{ vars.AZ_LOCATION }}
-          targetPort: ${{ inputs.target_port }}
+          targetPort: ${{ vars.TARGET_PORT }}
           ingress: 'external'
           acrName: ${{ vars.AZ_ACR_NAME }}
           acrUsername: ${{ inputs.acr_username }}

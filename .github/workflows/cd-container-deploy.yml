@@ -39,13 +39,14 @@ jobs:
       - name: Deploy to Azure Container Apps
         uses: azure/container-apps-deploy-action@v2
         with:
-          appName: ${{ github.event.repository.name }}
+          containerAppName: ${{ github.event.repository.name }}
           resourceGroup: ${{ vars.AZ_RESOURCE_GROUP }}
           imageToDeploy: ${{ vars.AZ_ACR_NAME }}.azurecr.io/${{ github.event.repository.name }}:${{ github.sha }}
           containerAppEnvironment: ${{ vars.AZ_ENV_NAME }}
           location: ${{ vars.AZ_LOCATION }}
           targetPort: ${{ inputs.target_port }}
           ingress: 'external'
+          acrName: ${{ vars.AZ_ACR_NAME }}
           registryUrl: ${{ vars.AZ_ACR_NAME }}.azurecr.io
-          registryUsername: ${{ inputs.acr_username }}
-          registryPassword: ${{ inputs.acr_password }}
+          acrUsername: ${{ inputs.acr_username }}
+          acrPassword: ${{ inputs.acr_password }}

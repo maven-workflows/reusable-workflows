@@ -38,10 +38,18 @@ jobs:
           docker build -t "$IMAGE_TAG" .
           echo "image_tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
 
-      - name: Push to ACR
-        uses: maven-workflows/actions/.github/actions/push-acr@main
+      - name: Login no Azure Container Registry
+        uses: azure/docker-login@v2
         with:
-          azure_credentials: ${{ secrets.AZURE_CREDENTIALS }}
-          acr_name: ${{ vars.AZ_ACR_NAME }}
-          image_tag: ${{ steps.build.outputs.image_tag }}
+          login-server: ${{ vars.AZ_ACR_NAME }}.azurecr.io
+          username: ${{ secrets.AZ_ACR_USERNAME }}
+          password: ${{ secrets.AZ_ACR_PASSWORD }}
+
+      - name: Build & Push Docker Image
+        id: docker_build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ vars.AZ_ACR_NAME }}.azurecr.io/${{ github.event.repository.name }}:${GITHUB_SHA}
 

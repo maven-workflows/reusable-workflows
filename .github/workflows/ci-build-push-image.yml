@@ -37,7 +37,7 @@ jobs:
       - name: Build Docker Image
         id: build
         run: |
-          IMAGE_TAG="${{ vars.ACR_NAME }}.azurecr.io/${{ github.event.repository.name }}:${GITHUB_SHA}"
+          IMAGE_TAG="${{ vars.AZ_ACR_NAME }}.azurecr.io/${{ github.event.repository.name }}:${GITHUB_SHA}"
           docker build -t "$IMAGE_TAG" .
           echo "image_tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
 
@@ -45,5 +45,5 @@ jobs:
         uses: maven-workflows/actions/.github/actions/push-acr@main
         with:
           azure_credentials: ${{ secrets.AZURE_CREDENTIALS }}
-          acr_name: ${{ vars.ACR_NAME }}
+          acr_name: ${{ vars.AZ_ACR_NAME }}
           image_tag: ${{ github.event.repository.name }}

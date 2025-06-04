@@ -47,6 +47,5 @@ jobs:
           targetPort: ${{ inputs.target_port }}
           ingress: 'external'
           acrName: ${{ vars.AZ_ACR_NAME }}
-          registryUrl: ${{ vars.AZ_ACR_NAME }}.azurecr.io
           acrUsername: ${{ inputs.acr_username }}
           acrPassword: ${{ inputs.acr_password }}

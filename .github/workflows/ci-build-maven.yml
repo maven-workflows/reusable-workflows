@@ -1,4 +1,4 @@
-name: Maven Build, Test & Sonar Reusable Workflow
+name: Maven Build, Test & Sonar
 
 on:
   workflow_call:

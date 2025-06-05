@@ -21,7 +21,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Shallow clones should be disabled for better analysis
+          fetch-depth: 2
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -39,23 +39,11 @@ jobs:
             maven-${{ runner.os }}-
 
       - name: Maven Build
-        run: mvn -B clean compile -DskipTests
+        run: mvn -B clean package -DskipTests
 
-      - name: Maven Test with JaCoCo
+      - name: Maven Test
         if: ${{ inputs.run-tests }}
         run: mvn test jacoco:report
-
-      - name: Verify JaCoCo Report Generation
-        if: ${{ inputs.run-tests }}
-        run: |
-          echo "Checking if JaCoCo XML report was generated..."
-          if [ -f "target/site/jacoco/jacoco.xml" ]; then
-            echo "✅ JaCoCo XML report found at target/site/jacoco/jacoco.xml"
-            ls -la target/site/jacoco/
-          else
-            echo "❌ JaCoCo XML report not found!"
-            find . -name "jacoco.xml" -type f 2>/dev/null || echo "No jacoco.xml files found in project"
-          fi
 
       - name: Cache Sonar Scanner
         if: ${{ inputs.run-sonar-analysis }}
@@ -81,25 +69,10 @@ jobs:
             -Dsonar.qualitygate.wait=true
             -Dsonar.verbose=true
 
-      - name: Build JAR (only if tests passed)
-        if: ${{ inputs.run-tests == false || success() }}
-        run: mvn -B package -DskipTests
-
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: app-jar
           retention-days: 3
           path: target/*.jar
-          if-no-files-found: warn
-
-      - name: Upload JaCoCo Coverage Reports
-        if: ${{ inputs.run-tests }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: jacoco-reports
-          retention-days: 7
-          path: |
-            target/site/jacoco/
-            target/jacoco.exec
           if-no-files-found: warn

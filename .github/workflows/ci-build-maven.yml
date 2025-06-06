@@ -39,7 +39,7 @@ jobs:
             maven-${{ runner.os }}-
 
       - name: Maven Build
-        run: mvn -B clean package -DskipTests
+        run: mvn -B clean package -DskipTests spring-boot:repackage
 
       - name: Maven Test
         if: ${{ inputs.run-tests }}

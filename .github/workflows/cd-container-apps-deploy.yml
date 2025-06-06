@@ -20,34 +20,16 @@ jobs:
       - name: Azure Login
         uses: azure/login@v2
         with:
-          creds: ${{ secrets.AZURE_CREDENTIALS}}
-
-      - name: Debug ACR inputs
-        env:
-          RAW_INPUTS: ${{ toJSON(inputs) }}
-        run: |
-          echo "🌐 inputs JSON: $RAW_INPUTS"
-          echo "::add-mask::${{ inputs.acr_password }}"
-          echo "acrUsername: ${{ inputs.acr_username }}"
-
-      - name: Login no Azure Container Registry
-        uses: azure/docker-login@v2
-        with:
-          login-server: ${{ vars.AZ_ACR_NAME }}.azurecr.io
-          username: ${{ inputs.acr_password }}
-          password: ${{ inputs.acr_username }}
-
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
 
       - name: Deploy to Azure Container Apps
         uses: azure/container-apps-deploy-action@v2
         with:
           containerAppName: ${{ github.event.repository.name }}
           resourceGroup: ${{ vars.AZ_RESOURCE_GROUP }}
-          imageToDeploy: ${{ vars.AZ_ACR_NAME }}.azurecr.io/${{ github.event.repository.name }}:${{ github.sha }}
+          imageToDeploy: ${{ vars.AZ_ACR_NAME }}.azurecr.io/${{ github.event.repository.name }}:${{ inputs.imageTag }}
           containerAppEnvironment: ${{ vars.AZ_ENV_NAME }}
           location: ${{ vars.AZ_LOCATION }}
           targetPort: ${{ vars.TARGET_PORT }}
           ingress: 'external'
           acrName: ${{ vars.AZ_ACR_NAME }}
-          acrUsername: ${{ inputs.acr_username }}
-          acrPassword: ${{ inputs.acr_password }}

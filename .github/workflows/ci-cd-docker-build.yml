@@ -53,8 +53,8 @@ jobs:
         uses: azure/docker-login@v2
         with:
           login-server: ${{ vars.AZ_ACR_NAME }}.azurecr.io
-          username: ${{ steps.acr_creds.outputs.acr_username }}
-          password: ${{ steps.acr_creds.outputs.acr_password }}
+          username: ${{ secrets.AZ_USERNAME }}
+          password: ${{ secrets.AZ_PASSWORD }}
 
       - name: Build & Push Docker Image
         id: docker_build
@@ -63,17 +63,3 @@ jobs:
           context: .
           push: true
           tags: ${{ vars.AZ_ACR_NAME }}.azurecr.io/${{ github.event.repository.name }}:${{ github.sha }}
-
-      - name: Deploy to Azure Container Apps
-        uses: azure/container-apps-deploy-action@v2
-        with:
-          containerAppName: ${{ github.event.repository.name }}
-          resourceGroup: ${{ vars.AZ_RESOURCE_GROUP }}
-          imageToDeploy: ${{ vars.AZ_ACR_NAME }}.azurecr.io/${{ github.event.repository.name }}:${{ github.sha }}
-          containerAppEnvironment: ${{ vars.AZ_ENV_NAME }}
-          location: ${{ vars.AZ_LOCATION }}
-          targetPort: ${{ vars.TARGET_PORT }}
-          ingress: 'external'
-          acrName: ${{ vars.AZ_ACR_NAME }}
-          acrUsername: ${{ steps.acr_creds.outputs.ACR_USERNAME }}
-          acrPassword: ${{ steps.acr_creds.outputs.ACR_PASSWORD }}

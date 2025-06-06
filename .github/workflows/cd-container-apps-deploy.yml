@@ -30,6 +30,9 @@ jobs:
           echo "ACR_USERNAME=$ACR_USERNAME" >> $GITHUB_OUTPUT
           echo "ACR_PASSWORD=$ACR_PASSWORD" >> $GITHUB_OUTPUT
         shell: bash
+      
+      - name: Ativar logs detalhados do Azure CLI
+        run: az config set core.logging_level=debug
 
       - name: Deploy to Azure Container Apps
         uses: azure/container-apps-deploy-action@v2
@@ -42,5 +45,5 @@ jobs:
           targetPort: ${{ vars.TARGET_PORT }}
           ingress: 'external'
           acrName: ${{ vars.AZ_ACR_NAME }}
-          registryUsername: ${{ steps.acr_creds.outputs.ACR_USERNAME }}
-          registryPassword: ${{ steps.acr_creds.outputs.ACR_PASSWORD }}
+          registryUsername: ${{ secrets.AZ_USERNAME }}
+          registryPassword: ${{ secrets.AZ_PASSWORD }}

@@ -39,7 +39,7 @@ jobs:
         with:
           containerAppName: ${{ github.event.repository.name }}
           resourceGroup: ${{ vars.AZ_RESOURCE_GROUP }}
-          imageToDeploy: ${{ vars.AZ_ACR_NAME }}.azurecr.io/${{ github.event.repository.name }}:${{ github.sha }}
+          imageToDeploy: ${{ vars.AZ_ACR_NAME }}.azurecr.io/${{ github.event.repository.name }}:latest
           containerAppEnvironment: ${{ vars.AZ_ENV_NAME }}
           location: ${{ vars.AZ_LOCATION }}
           targetPort: ${{ vars.TARGET_PORT }}

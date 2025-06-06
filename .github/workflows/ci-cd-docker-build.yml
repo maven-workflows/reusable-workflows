@@ -46,6 +46,16 @@ jobs:
           set -o pipefail
           # Mesmo que o java retorne exit code != 0, queremos ver o stack-trace no log e seguir adiante
           docker run --rm maven-class-lib:test || true
+      - name: Listar conteúdo do JAR e inspecionar manifest
+        run: |
+          # Supondo que exista apenas um JAR em app-jar:
+          JARFILE=$(ls app-jar/*.jar)
+          echo "== Conteúdo do JAR =="
+          jar tf "$JARFILE" | head -20
+          echo "== MANIFEST.MF completo =="
+          jar xf "$JARFILE" META-INF/MANIFEST.MF
+          sed -n '1,20p' META-INF/MANIFEST.MF
+
 
       - name: Azure Login
         uses: azure/login@v2

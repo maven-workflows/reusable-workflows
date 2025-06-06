@@ -35,11 +35,16 @@ jobs:
           ENTRYPOINT ["java", "-jar", "/app.jar"]
           EOF
 
+      # ───> ETAPA NOVA: Buildar a imagem localmente para TESTE <───
+      - name: Build local para teste
+        run: |
+          docker build -t maven-class-lib:test .
+
+      # ───> ETAPA QUE RODA A IMAGEM “test” E EXIBE STACK‐TRACE <───
       - name: Executar container localmente e exibir stack-trace
         run: |
           set -o pipefail
-          # Note o “|| true” abaixo: ele impede que o job quebre caso o Java retorne código != 0.
-          # Assim, mesmo com stack-trace, o workflow continuará executando os próximos passos.
+          # Mesmo que o java retorne exit code != 0, queremos ver o stack-trace no log e seguir adiante
           docker run --rm maven-class-lib:test || true
 
       - name: Azure Login

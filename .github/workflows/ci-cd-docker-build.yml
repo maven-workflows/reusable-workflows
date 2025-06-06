@@ -31,31 +31,9 @@ jobs:
           FROM eclipse-temurin:21-jre
           COPY app-jar/*.jar /app.jar
           WORKDIR /
-          EXPOSE 8080
+          EXPOSE ${{ vars.TARGET_PORT }}
           ENTRYPOINT ["java", "-jar", "/app.jar"]
           EOF
-
-      # ───> ETAPA NOVA: Buildar a imagem localmente para TESTE <───
-      - name: Build local para teste
-        run: |
-          docker build -t maven-class-lib:test .
-
-      # ───> ETAPA QUE RODA A IMAGEM “test” E EXIBE STACK‐TRACE <───
-      - name: Executar container localmente e exibir stack-trace
-        run: |
-          set -o pipefail
-          # Mesmo que o java retorne exit code != 0, queremos ver o stack-trace no log e seguir adiante
-          docker run --rm maven-class-lib:test || true
-      - name: Listar conteúdo do JAR e inspecionar manifest
-        run: |
-          # Supondo que exista apenas um JAR em app-jar:
-          JARFILE=$(ls app-jar/*.jar)
-          echo "== Conteúdo do JAR =="
-          jar tf "$JARFILE" | head -20
-          echo "== MANIFEST.MF completo =="
-          jar xf "$JARFILE" META-INF/MANIFEST.MF
-          sed -n '1,20p' META-INF/MANIFEST.MF
-
 
       - name: Azure Login
         uses: azure/login@v2
@@ -84,4 +62,4 @@ jobs:
         with:
           context: .
           push: true
-          tags: ${{ vars.AZ_ACR_NAME }}.azurecr.io/${{ github.event.repository.name }}:latest
+          tags: ${{ vars.AZ_ACR_NAME }}.azurecr.io/${{ github.event.repository.name }}:${{ github.sha }}

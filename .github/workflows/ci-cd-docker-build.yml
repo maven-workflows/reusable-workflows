@@ -31,7 +31,7 @@ jobs:
           FROM eclipse-temurin:21-jre
           COPY app-jar/*.jar /app.jar
           WORKDIR /
-          EXPOSE ${{ vars.TARGET_PORT }}
+          EXPOSE 8080
           ENTRYPOINT ["java", "-jar", "/app.jar"]
           EOF
 

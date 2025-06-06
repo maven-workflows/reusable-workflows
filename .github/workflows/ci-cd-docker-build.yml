@@ -35,6 +35,13 @@ jobs:
           ENTRYPOINT ["java", "-jar", "/app.jar"]
           EOF
 
+      - name: Executar container localmente e exibir stack-trace
+        run: |
+          set -o pipefail
+          # Note o “|| true” abaixo: ele impede que o job quebre caso o Java retorne código != 0.
+          # Assim, mesmo com stack-trace, o workflow continuará executando os próximos passos.
+          docker run --rm maven-class-lib:test || true
+
       - name: Azure Login
         uses: azure/login@v2
         with:
